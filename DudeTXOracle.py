@@ -2,20 +2,24 @@ import os
 import subprocess
 import sys
 
-def issue_cli_command(command: list[str]) -> None:
-    # Build CLI options if specified in conf file
-    bitcoin_cli_options = []
-    bitcoin_cli_options.append(f"-rpcconnect={os.getenv("RPC_CONNECT")}")
-    bitcoin_cli_options.append(f"-rpcport={os.getenv("RPC_PORT")}")
-    bitcoin_cli_options.append(f"-rpcuser={os.getenv("RPC_USER")}")
-    bitcoin_cli_options.append(f"-rpcpassword={os.getenv("RPC_PASSWORD")}")
+def get_cli_options() -> list[str]:
+    # Get the CLI options.
+    options = []
+    options.append(f"-rpcconnect={os.getenv("RPC_CONNECT")}")
+    options.append(f"-rpcport={os.getenv("RPC_PORT")}")
+    options.append(f"-rpcuser={os.getenv("RPC_USER")}")
+    options.append(f"-rpcpassword={os.getenv("RPC_PASSWORD")}")
     
-    full_command = ["bitcoin-cli"] + bitcoin_cli_options + command
-    print(f"Issuing bitcoin-cli command: {command}")
+    return options 
 
+def ask_node(command: list[str]) -> None:
+    # Build the text of the command to be run.
+    bitcoin_cli_options = get_cli_options()
+    full_command = ["bitcoin-cli"] + bitcoin_cli_options + command
+    
+    print(f"Issuing bitcoin-cli command: {command}")
     try:
         response = subprocess.check_output(full_command)
-        #subprocess.run('echo "\\033]0;UTXOracle\\007"', shell=True)
         return response.decode().strip()
     except Exception as e:
         print("Error connecting to your node. Troubleshooting steps:\n")
@@ -29,7 +33,7 @@ def issue_cli_command(command: list[str]) -> None:
 if __name__ == '__main__':
     print('-' * 80)
     print('Let\'s go!')
-    block_hash = issue_cli_command(['getblockhash', '777777'])
-    response = issue_cli_command(['getblockheader', block_hash, 'true'])
+    block_hash = ask_node(['getblockhash', '777777'])
+    response = ask_node(['getblockheader', block_hash, 'true'])
     print(f"type: {type(response)}")
     print(response)
