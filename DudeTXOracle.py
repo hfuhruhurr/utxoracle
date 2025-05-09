@@ -3,7 +3,6 @@ import subprocess
 import sys
 
 def issue_cli_command(command: list[str]) -> None:
-    print("Issuing cli command...")
     # Build CLI options if specified in conf file
     bitcoin_cli_options = []
     bitcoin_cli_options.append(f"-rpcconnect={os.getenv("RPC_CONNECT")}")
@@ -12,6 +11,7 @@ def issue_cli_command(command: list[str]) -> None:
     bitcoin_cli_options.append(f"-rpcpassword={os.getenv("RPC_PASSWORD")}")
     
     full_command = ["bitcoin-cli"] + bitcoin_cli_options + command
+    print(f"Issuing bitcoin-cli command: {command}")
 
     try:
         response = subprocess.check_output(full_command)
