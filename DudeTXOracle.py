@@ -35,6 +35,13 @@ def ask_node(command: list[str]) -> None:
         print("\nThe error from bitcoin-cli was:\n", e)
         sys.exit()
 
+def get_block_time(height: int) -> int:
+    block_hash = ask_node(['getblockhash', str(height)])
+    block_header = ask_node(['getblockheader', block_hash, 'true'])
+    block_header = json.loads(block_header)
+
+    return block_header['time']
+
 if __name__ == '__main__':
     print('-' * 80)
     print('Let\'s go!')
@@ -48,9 +55,7 @@ if __name__ == '__main__':
     # -------------------------------------------------------------------------
     print("Part 3...")
     consensus_block_height = int(ask_node(['getblockcount'])) - NUM_BLOCKS_FOR_CONSENSUS
-    consensus_block_hash = ask_node(['getblockhash', str(consensus_block_height)])
-    consensus_block_header = json.loads(ask_node(['getblockheader', consensus_block_hash, 'true']))
-    consensus_datetime = datetime.fromtimestamp(consensus_block_header['time'], tz=timezone.utc)
+    consensus_datetime = datetime.fromtimestamp(get_block_time(consensus_block_height), tz=timezone.utc)
     consensus_midnight = consensus_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
     latest_price_datetime = consensus_datetime - timedelta(days=1)
 
@@ -66,11 +71,26 @@ if __name__ == '__main__':
     # -------------------------------------------------------------------------
     print("Part 4...")
 
-    print(datetime(2025, 5, 8, 0, 0, 0, tzinfo=timezone.utc))
-    print(datetime(2025, 5, 8, 0, 0, 0, tzinfo=timezone.utc).timestamp())
-    print(consensus_midnight)
-    print(consensus_midnight - timedelta(days=1))
+    # if there is no specified cli date argument then...
+    target_date = consensus_midnight - timedelta(1)
 
+    # if there is a cli date argument then...
+    # split on "/" since it's entered as YYYY/MM/DD
+    # target_date = datetime(YYYY, MM, DD, 0, 0, 0, timezone.utc)
+    # must pass two checks:
+    #   1. target_date < consensus_midnight 
+    #      (confusing explanation: "Date is after the latest avaiable. We need 6 blocks after UTC midnight.")
+    #   2. target_date >= 2023/12/15
+    # otherwise, print error message and abort
+
+    # -------------------------------------------------------------------------
+    # Part 5: Find all blocks on the target day (or in the last 144 blocks)
+    # -------------------------------------------------------------------------
+    print("Part 5...")
+    hash = ask_node(['getblockhash', "777777"])
+    print(f"len(hash): {len(hash)}")
+    print(f"hash: {hash}")
+    
     print('-' * 80)
     print('Done!')
     print('-' * 80)
