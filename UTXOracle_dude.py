@@ -389,12 +389,18 @@ elif date_mode:
     print(f"    price_day_block - 1 (date): {datetime.fromtimestamp(ts_previous, tz=timezone.utc)}")
     print(f"    # of RPC calls: {n_rpc_calls}")
     
+    # The rest of Part 5 finds the last block of the day (first block of next day).
+    # It starts with the first block of the target day, then increments block height by 1.
+    # Then it checks its timestamp to see if it still in the target day.
+    # Repeat until we leave the target day.
+    # Seems ripe for improvement.  (No need to check every block.  Make a big first jump.  Jump thereafter based on TOD.)
+
     # WTF is this nonsense???  day1 = day2 (and in the most convoluted way possible)
-    #get the day of the month 
+    # get the day of the month 
     time_in_seconds, hash_start = get_block_time(price_day_block)
     day1 = get_day_of_month(time_in_seconds)
     
-    #get the last block number of the day
+    # get the last block number of the day
     price_day_block_end = price_day_block 
     time_in_seconds, hash_end = get_block_time(price_day_block_end)
     day2 = get_day_of_month(time_in_seconds)
@@ -406,38 +412,46 @@ elif date_mode:
     # What?!!!  Correct order of blocks???  Huh?
     print("\nDetermining the correct order of blocks",flush=True)
     
-    #load block nums and hashes needed
+    # load block nums and hashes needed
+    print("   1st while loop...")
     block_num = 0
-    print_next = 0
+    print_next = 0  # this refers to the status bar update...refreshes every 20%
+    i = 1
     while day1 == day2:
-        
-        #print progress update
-        block_num+=1
-        if block_num/144 * 100 > print_next:
+        print(f"    block_num: {block_num}, print_next: {print_next}, price_day_block_end: {price_day_block_end} {i}")
+        # print progress update
+        block_num += 1
+        i += 1
+        if block_num / 144 * 100 > print_next:
             if print_next < 100:
-                print(str(print_next)+"%..",end="",flush=True)
-                print_next +=20
+                print(str(print_next) + "%..", end="", flush=True)
+                print_next += 20
         
-        #append needed block
+        # append needed block
         block_nums_needed.append(price_day_block_end)
         block_hashes_needed.append(hash_end)
         block_times_needed.append(time_in_seconds)
-        price_day_block_end += 1 #assume 30+ blocks this day
+        
+        price_day_block_end += 1 # assume 30+ blocks this day
         time_in_seconds, hash_end = get_block_time(price_day_block_end)
         day2 = get_day_of_month(time_in_seconds)
     
-    #complete print update status
-    while print_next<100:
-        print(str(print_next)+"%..",end="",flush=True)
-        print_next +=20
+    print("   2nd while loop...")
+    print(f"    print_next: {print_next}, price_day_block: {price_day_block}, price_day_block_end: {price_day_block_end}")
+    # complete print update status
+    # this while loop will never get run since print_next will always be 100
+    while print_next < 100:
+        print(str(print_next) + "%..", end="", flush=True)
+        print_next += 20
     
-    #set start and end block numbers
+    # set start and end block numbers
     block_start_num = price_day_block
     block_finish_num = price_day_block_end
 
     print("100%\t\t\t50% done",flush=True)
 
-
+    print(f"    block_start_num : {block_start_num} {datetime.fromtimestamp(get_block_time(block_start_num)[0], tz=timezone.utc)}")
+    print(f"    block_finish_num: {block_finish_num} {datetime.fromtimestamp(get_block_time(block_finish_num)[0], tz=timezone.utc)}")
 
 ##############################################################################  
 

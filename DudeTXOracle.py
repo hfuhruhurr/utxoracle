@@ -140,9 +140,35 @@ if __name__ == '__main__':
 
         return first_block, n_rpc_calls
         
+    def same_day(dt1: datetime, dt2: datetime) -> bool:
+        return dt1.date() == dt2.date()
+    
+    def find_last_block_of_day(target_date: datetime, first_block: int) -> int:
+        jump = 100  # Assume at least 100 blocks in a day
+        block = first_block + jump  
+        block_dt = datetime.fromtimestamp(get_block_time(block), tz=timezone.utc)
+        
+        i = 1
+        while same_day(target_date, block_dt):
+            print(f"    block: {block} @ {block_dt} {i}")
+            # Trying to be smart about which block to check next.
+            if block_dt.hour < 22:
+                jump = (23 - block_dt.hour) * 5
+            elif block_dt.hour == 22:
+                jump = 4
+            else:
+                jump = 1
+            block += jump
+            i += 1
+            block_dt = datetime.fromtimestamp(get_block_time(block), tz=timezone.utc)
+        
+        return block - 1
+    
     fbod, n_rpc_calls = find_first_block_of_day(target_date, consensus_block_height)
     check_fbod(fbod)
     print(f"    n_rpc_calls: {n_rpc_calls}")
+    lbod = find_last_block_of_day(target_date, fbod)
+    print(f"    lbod: {lbod}")
 
     # -------------------------------------------------------------------------
     # Part 6:
