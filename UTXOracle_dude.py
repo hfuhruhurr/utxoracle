@@ -5,6 +5,10 @@ import sys
 import subprocess
 from datetime import datetime, timezone, timedelta
 import json 
+from hashlib import sha256  # Part 6
+import paramiko  # Part 6
+from typing import List  # Part 6
+
 
 print('-' * 80)
 print('Let\'s go, Simple Steve style!')
@@ -19,7 +23,7 @@ print("Part 1...")
 # print("\nUTXOracle version 9.0")
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-# # set platform dependent data paths and clear terminal
+# set platform dependent data paths and clear terminal
 # data_dir = []
 # system = platform.system()
 # if system == "Darwin":  # macOS
@@ -31,6 +35,9 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 # else:  # Linux or others
 #     data_dir = os.path.expanduser("~/.bitcoin")
 #     os.system('clear')
+
+data_dir = 'home/umbrel/umbrel/app-data/bitcoin-knots/data/bitcoin/'
+# print(f"    data_dir      : {data_dir}")
 
 # initialize variables for blocks and dates
 date_entered = ""
@@ -98,7 +105,10 @@ block_times_needed = []
 #                 conf_settings[key.strip()] = value.strip().strip('"')
 
 # # Set blocks directory from default or user specified
+# First used in Part 6
 # blocks_dir = os.path.expanduser(conf_settings.get("blocksdir", os.path.join(data_dir, "blocks")))
+blocks_dir = os.path.join(data_dir, "blocks")
+# print(f"    blocks_dir: {blocks_dir}")
 
 # # Build CLI options if specified in conf file
 # bitcoin_cli_options = []
@@ -194,9 +204,9 @@ latest_price_date = latest_price_day.strftime("%Y-%m-%d")
 
 #print completion update
 # print("5% done",flush=True)
-print(f"    latest_time_in_seconds: {latest_time_in_seconds}")
-print(f"    latest_time_in_seconds (date): {datetime.fromtimestamp(latest_time_in_seconds, tz=timezone.utc)}")
-print(f"    latest_price_date: {latest_price_date}")
+# print(f"    latest_time_in_seconds: {latest_time_in_seconds}")
+# print(f"    latest_time_in_seconds (date): {datetime.fromtimestamp(latest_time_in_seconds, tz=timezone.utc)}")
+# print(f"    latest_price_date: {latest_price_date}")
 
 ###############################################################################  
 # Part 4) Check that the date entered is an acceptable date    
@@ -240,7 +250,7 @@ if date_mode:
             sys.exit()
     
     # force a value for debugging
-    datetime_entered = datetime(2025,1,1,0,0,0,tzinfo=timezone.utc)
+    datetime_entered = datetime(2025, 1, 1, 0, 0, 0,tzinfo=timezone.utc)
 
     #get the seconds and printable date string of date entered
     price_day_seconds = int(datetime_entered.timestamp())
@@ -249,8 +259,8 @@ if date_mode:
 
     
     
-print(f"    price_day_seconds: {price_day_seconds}")
-print(f"    price_day_seconds (date): {datetime.fromtimestamp(price_day_seconds, tz=timezone.utc)}")
+# print(f"    price_day_seconds: {price_day_seconds}")
+# print(f"    price_day_seconds (date): {datetime.fromtimestamp(price_day_seconds, tz=timezone.utc)}")
 
 ##############################################################################  
 # Part 5) Find the all blocks on the target day or in block height range requested
@@ -372,14 +382,14 @@ elif date_mode:
     #assign the estimate as the price day block since it is correct now    
     price_day_block = price_day_block_estimate
 
-    print(f"    price_day_block: {price_day_block}")
-    ts = get_block_time(price_day_block)
-    print(f"    price_day_block (date): {datetime.fromtimestamp(ts[0], tz=timezone.utc)}")
-    ts_previous = get_block_time(price_day_block - 1)
-    print(f"    price_day_block - 1 (date): {datetime.fromtimestamp(ts_previous[0], tz=timezone.utc)}")
+    print(f"    price_day_block           : {price_day_block}")
+    ts = get_block_time(price_day_block)[0]
+    print(f"    price_day_block (date)    : {datetime.fromtimestamp(ts, tz=timezone.utc)}")
+    ts_previous = get_block_time(price_day_block - 1)[0]
+    print(f"    price_day_block - 1 (date): {datetime.fromtimestamp(ts_previous, tz=timezone.utc)}")
     print(f"    # of RPC calls: {n_rpc_calls}")
-    sys.exit()
     
+    # WTF is this nonsense???  day1 = day2 (and in the most convoluted way possible)
     #get the day of the month 
     time_in_seconds, hash_start = get_block_time(price_day_block)
     day1 = get_day_of_month(time_in_seconds)
@@ -389,7 +399,11 @@ elif date_mode:
     time_in_seconds, hash_end = get_block_time(price_day_block_end)
     day2 = get_day_of_month(time_in_seconds)
     
+    print(f"    day1: {day1}")
+    print(f"    day2: {day2}")
+
     # print("100%\t\t\t25% done",flush=True)
+    # What?!!!  Correct order of blocks???  Huh?
     print("\nDetermining the correct order of blocks",flush=True)
     
     #load block nums and hashes needed
@@ -430,7 +444,8 @@ elif date_mode:
 # Part 6) Build a map of the binary block files      
 
 ##############################################################################  
-
+sys.exit()
+print("Part 6...")
 # In this section we find the byte-wise location of all the block data
 # that we need in terms of where it's stored on the user's hard drive
 
@@ -442,16 +457,52 @@ Mainnet_flag = b'\xf9\xbe\xb4\xd9'
 Header_size = 80
 
 #short cut for hashing
-from hashlib import sha256
-def sha256d(b): return sha256(sha256(b).digest()).digest()
+def sha256d(b): 
+    return sha256(sha256(b).digest()).digest()
 
 # Get all .blk files sorted by index
 block_hashes_needed = set(block_hashes_needed)
 found_blocks = {}
-blk_files = sorted(
-        [f for f in os.listdir(blocks_dir) if f.startswith('blk') and f.endswith('.dat')],
-        key=lambda f: int(f[3:8])
-    )
+# blk_files = sorted(
+#         [f for f in os.listdir(blocks_dir) if f.startswith('blk') and f.endswith('.dat')],
+#         key=lambda f: int(f[3:8])
+#     )
+
+def get_block_files(blocks_dir: str) -> List[str]:
+    # SSH connection details
+    host = os.getenv("UMBREL_HOST_IP")
+    username = os.getenv("UMBREL_USER")
+    password = os.getenv("UMBREL_PASSWORD")
+    
+    if not all([host, username, password]):
+        raise ValueError("Missing environment variables: UMBREL_HOST_IP, UMBREL_USER, or UMBREL_PASSWORD")
+    
+    # Establish SSH connection
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    
+    try:
+        ssh.connect(host, username=username, password=password)
+        # Use SFTP to list remote directory
+        sftp = ssh.open_sftp()
+        try:
+            block_files = sorted(
+                [f for f in sftp.listdir(blocks_dir) if f.startswith('blk') and f.endswith('.dat')],
+                key=lambda f: int(f[3:8])
+            )
+        except FileNotFoundError:
+            print(f"Directory {blocks_dir} not found on {host}")
+            block_files = []
+        sftp.close()
+    except paramiko.SSHException as e:
+        print(f"SSH connection failed: {e}")
+        block_files = []
+    finally:
+        ssh.close()
+    
+    return block_files
+
+blk_files = get_block_files(blocks_dir)
 
 # conservatively estimate the first and last blk file needed
 block_depth_start = block_count_consensus - block_nums_needed[0]

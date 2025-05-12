@@ -3,7 +3,8 @@ import subprocess
 import sys
 from datetime import datetime, timezone, timedelta
 import json 
-
+import paramiko  # Part 6
+from typing import List
 
 NUM_BLOCKS_FOR_CONSENSUS = 6
 EXPECTED_BLOCKS_PER_DAY = 144
@@ -48,6 +49,12 @@ if __name__ == '__main__':
     print('Let\'s go!')
     print('-' * 80)
 
+    print("Part 1...")
+    data_dir = '/home/umbrel/umbrel/app-data/bitcoin-knots/data/bitcoin/'
+    blocks_dir = os.path.join(data_dir, "blocks")
+    print(f"    data_dir  : {data_dir}")
+    print(f"    blocks_dir: {blocks_dir}")
+    
     # -------------------------------------------------------------------------
     # Part 3: Get the latest consensus block to determine the latest price
     #         we can use.
@@ -60,11 +67,11 @@ if __name__ == '__main__':
     consensus_block_midnight = consensus_block_ts.replace(hour=0, minute=0, second=0, microsecond=0)
     latest_price_datetime = consensus_block_ts - timedelta(days=1)
 
-    print(f"    consensus_block_height  : {consensus_block_height}")
+    # print(f"    consensus_block_height  : {consensus_block_height}")
     # print(f"    consensus_block_hash    : {consensus_block_hash}")
     # print(f"    consensus_block_header  : {consensus_block_header}")
-    print(f"    consensus_block_ts      : {consensus_block_ts}")
-    print(f"    consensus_block_midnight: {consensus_block_midnight}")
+    # print(f"    consensus_block_ts      : {consensus_block_ts}")
+    # print(f"    consensus_block_midnight: {consensus_block_midnight}")
     # print(f"    latest_price_datetime   : {latest_price_datetime}")
     
     # -------------------------------------------------------------------------
@@ -85,14 +92,21 @@ if __name__ == '__main__':
     #   2. target_date >= 2023/12/15
     # otherwise, print error message and abort
 
-    print(f"    target_date: {target_date}")
+    # print(f"    target_date: {target_date}")
     # -------------------------------------------------------------------------
     # Part 5: Find all blocks on the target day (or in the last 144 blocks)
     # -------------------------------------------------------------------------
     print("Part 5...")
     
+    def check_fbod(fbod):
+        print(f"    fbod           : {fbod}")
+        print(f"    fbod (date)    : {datetime.fromtimestamp(get_block_time(fbod), tz=timezone.utc)}")
+        print(f"    fbod - 1 (date): {datetime.fromtimestamp(get_block_time(fbod - 1), tz=timezone.utc)}")
+
     def find_first_block_of_day(target_date: datetime, max_block_height: int) -> int:
-        buffer = 10
+        # TODO: binary search is slower, not faster
+
+        buffer = 500
         n_rpc_calls = 0
 
         target_ts = int(target_date.timestamp())
@@ -127,13 +141,49 @@ if __name__ == '__main__':
         return first_block, n_rpc_calls
         
     fbod, n_rpc_calls = find_first_block_of_day(target_date, consensus_block_height)
-    print(f"    fbod: {fbod}")
+    check_fbod(fbod)
     print(f"    n_rpc_calls: {n_rpc_calls}")
 
     # -------------------------------------------------------------------------
     # Part 6:
     # -------------------------------------------------------------------------
-    # print("Part 6...")
+    sys.exit()
+    print("Part 6...")
+    
+    def get_block_files(blocks_dir: str) -> List[str]:
+        # SSH connection details
+        host = os.getenv("UMBREL_HOST_IP")
+        username = os.getenv("UMBREL_USER")
+        password = os.getenv("UMBREL_PASSWORD")
+
+        if not all([host, username, password]):
+            raise ValueError("Missing environment variables: UMBREL_HOST_IP, UMBREL_USER, or UMBREL_PASSWORD")
+
+        # Establish SSH connection
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            ssh.connect(host, username=username, password=password)
+            # Use SFTP to list remote directory
+            sftp = ssh.open_sftp()
+            try:
+                block_files = sorted(
+                    [f for f in sftp.listdir(blocks_dir) if f.startswith('blk') and f.endswith('.dat')],
+                    key=lambda f: int(f[3:8])
+                )
+            except FileNotFoundError:
+                print(f"Directory {blocks_dir} not found on {host}")
+                block_files = []
+            sftp.close()
+        except paramiko.SSHException as e:
+            print(f"SSH connection failed: {e}")
+            block_files = []
+        finally:
+            ssh.close()
+
+        return block_files
+
+    get_block_files(blocks_dir)
     
     # -------------------------------------------------------------------------
     # Part 7:
