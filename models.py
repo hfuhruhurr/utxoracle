@@ -1,13 +1,13 @@
+from typing import BinaryIO
 from dataclasses import dataclass
-from datetime import datetime #, timezone
+from datetime import datetime, timezone
 from hashlib import sha256
-# from typing import List #, Optional, Tuple
+from typing import Tuple
 
 # invaluable resource: https://learnmeabitcoin.com/technical/block/blkdat/
 MAINNET_MAGIC_BYTES = b'\xf9\xbe\xb4\xd9'
 HEADER_LENGTH = 80  # Bitcoin block header total length (in bytes)
-HEADER_FORMAT = '<4s32s32s4s4s4s'  # Little-endian format for the block header
-
+# HEADER_FORMAT = '<4s32s32s4s4s4s'  # Little-endian format for the block header
 
 def hash256(block_header: bytes) -> bytes:
     return sha256(sha256(block_header).digest()).digest()
@@ -116,6 +116,113 @@ class RawBlock:
         """Check if the block is from the mainnet."""
         return self.magic_bytes == MAINNET_MAGIC_BYTES
     
+    @classmethod
+    def parse(cls, f: BinaryIO, start: int) -> 'RawBlock':
+        """
+        Parse a Bitcoin block from a binary file from the given start position.
+
+        Args:
+            file: A file object opened in binary mode ('rb') positioned at the start of a block.
+
+        Returns:
+            A RawBlock instance.
+        """
+        f.seek(start)
+
+        # Read magic bytes (4 bytes)
+        magic_bytes = f.read(4)
+        if len(magic_bytes) < 4:
+            raise ValueError("Incomplete magic bytes; end of file or invalid block")
+
+        # Read size (4 bytes)
+        size_bytes = f.read(4)
+        if len(size_bytes) < 4:
+            raise ValueError("Incomplete size field")
+        size = int.from_bytes(size_bytes, 'little')
+
+        # Read block_data (header + n_txs + transactions, based on size)
+        block_data = f.read(size)
+        if len(block_data) < size:
+            raise ValueError(f"Incomplete block data: got {len(block_data)} bytes, expected {size}")
+
+        # Parse block header (starts at byte 0 of block_data)
+        block_header = cls.parse_block_header(block_data)
+
+        # Parse n_txs (compact size, after header at byte 80)
+        n_txs, tx_data_pos = cls.get_compact_size(block_data, pos=80)
+
+        # Transaction data (from tx_data_pos to end)
+        txs = block_data[tx_data_pos:]
+
+        return RawBlock(
+            magic_bytes=magic_bytes,
+            size=size,
+            block_header=block_header,
+            n_txs=n_txs,
+            txs=txs
+        )
+    
+    @staticmethod
+    def parse_block_header(block_data: bytes) -> BlockHeader:
+        """Extract block header information from raw block bytes.
+
+        Args:
+            block_data: The raw block data (at least 80 bytes).
+
+        Returns:
+            A BlockHeaderInfo dataclass containing:
+            - header: Full block header (80 bytes)
+            - version: Version bytes (4 bytes)
+            - prev_block_hash: Previous block hash (32 bytes)
+            - merkle_root: Merkle root (32 bytes)
+            - timestamp: Timestamp bytes (4 bytes)
+            - bits: Bits (difficulty target, 4 bytes)
+            - nonce: Nonce (4 bytes)
+
+        Raises:
+            ValueError: If block_bytes is shorter than 80 bytes or cannot be parsed.
+        """
+        if len(block_data) < HEADER_LENGTH:
+            raise ValueError(f"Block data too short: got {len(block_data)} bytes, need at least {HEADER_LENGTH}")
+
+        # Extract header
+        header = block_data[:HEADER_LENGTH]
+
+        # Parse timestamp as integer, then convert to datetime
+        timestamp_int = int.from_bytes(header[68:72], 'little')
+        timestamp = datetime.fromtimestamp(timestamp_int, tz=timezone.utc)
+
+        # Parse header fields 
+        return BlockHeader(
+            header=header,
+            version=header[0:4],
+            prev_block_hash=header[4:36],
+            merkle_root=header[36:68],
+            timestamp=timestamp,
+            hash_target=header[72:76],
+            nonce=header[76:80]
+        )
+
+    @staticmethod
+    def get_compact_size(byte_data: bytes, pos: int) -> Tuple[int, int]:
+        """
+        Get the compact size integer from byte_data starting at pos.
+        Args:
+            byte_data: The input bytes containing the compact size integer.
+            pos: The starting position in byte_data.
+        Returns:
+            A tuple of (compact size integer value, position immediately after).
+        """
+        leading_byte = byte_data[pos]
+        if leading_byte < 0xfd:
+            return leading_byte, pos + 1
+        elif leading_byte == 0xfd:
+            return int.from_bytes(byte_data[pos+1:pos+3], 'little'), pos + 3
+        elif leading_byte == 0xfe:
+            return int.from_bytes(byte_data[pos+1:pos+5], 'little'), pos + 5
+        else:
+            return int.from_bytes(byte_data[pos+1:pos+9], 'little'), pos + 9
+        
     # @classmethod
     # def parse_txs(cls, tx_data: bytes) -> List[Transaction]:
     #     """Parse the transaction data into a list of Transaction objects."""
@@ -195,9 +302,9 @@ class RawBlock:
             f"      Timestamp                : {self.block_header.timestamp} (UTC)\n"
             f"      Hash target (aka, bits)  : {self.block_header.hash_target.hex()}\n"
             f"      Nonce                    : {self.block_header.nonce.hex()}\n"
-            f"    Block hash                 : {self.block_header.block_hash.hex()}"
+            f"    Block hash                 : {self.block_header.block_hash.hex()}\n"
             f"    # of txs                   : {self.n_txs:,}\n"
-            # f"    Tx data (truncated)        : {self.txs.hex()[:50]}...{self.txs.hex()[-50:]}\n"
+            f"    Tx data (truncated)        : {self.txs.hex()[:50]}...{self.txs.hex()[-50:]}\n"
             # f"\n    len(txs) = {len(self.txs)}, type(txs) = {type(self.txs)}"
             "\n"
         )

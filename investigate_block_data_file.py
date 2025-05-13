@@ -1,13 +1,9 @@
-from typing import BinaryIO, Tuple
-import struct
-from models import RawBlock, BlockHeader#, Transaction, Input, Output, ScriptSig, WitnessField, StackItem
-from datetime import datetime, timezone
+from typing import Tuple
+from models import RawBlock#, BlockHeader#, Transaction, Input, Output, ScriptSig, WitnessField, StackItem
 
 # invaluable resource: https://learnmeabitcoin.com/technical/block/blkdat/
 
 BLOCK_FILE_TO_READ = 'blk04930.dat'
-MAINNET_MAGIC_BYTES = b'\xf9\xbe\xb4\xd9'
-HEADER_LENGTH = 80  # Bitcoin block header total length (in bytes)
     
 def ghetto_debug_delineator(message: str) -> None:
     print("-" * 80)
@@ -25,109 +21,8 @@ def get_xor_key(xor_data_file: str) -> Tuple[bytes, bool]:
             need_to_deobfuscate = False
         return xor_key, need_to_deobfuscate
 
-def get_compact_size(byte_data: bytes, pos: int) -> Tuple[int, int]:
-    """
-    Get the compact size integer from byte_data starting at pos.
-    
-    Args:
-        byte_data: The input bytes containing the compact size integer.
-        pos: The starting position in byte_data.
-    
-    Returns:
-        A tuple of (compact size integer value, position immediately after the compact size integer).
-    """
-    leading_byte = byte_data[pos]
-    if leading_byte < 0xfd:
-        return int.from_bytes(leading_byte), pos + 1
-    elif leading_byte == 0xfd:
-        return int.from_bytes(byte_data[pos+1:pos+3], 'little'), pos + 3
-    elif leading_byte == 0xfe:
-        return int.from_bytes(byte_data[pos+1:pos+5], 'little'), pos + 5
-    else:
-        # note: should never happen...ow, the block's txs consume more than 4GB!
-        return int.from_bytes(byte_data[pos+1:pos+9], 'little'), pos + 9
-
 def display_bytes(data: bytes, endian: str = 'little') -> str:
     return f"{data.hex()} --> {int.from_bytes(data, byteorder=endian)}"
-
-def parse_block_header(block_bytes: bytes) -> BlockHeader:
-    """Extract block header information from raw block bytes.
-
-    Args:
-        block_bytes: The raw block data (at least 80 bytes).
-
-    Returns:
-        A BlockHeaderInfo dataclass containing:
-        - header: Full block header (80 bytes)
-        - version: Version bytes (4 bytes)
-        - prev_block_hash: Previous block hash (32 bytes)
-        - merkle_root: Merkle root (32 bytes)
-        - timestamp: Timestamp bytes (4 bytes)
-        - bits: Bits (difficulty target, 4 bytes)
-        - nonce: Nonce (4 bytes)
-
-    Raises:
-        ValueError: If block_bytes is shorter than 80 bytes or cannot be parsed.
-    """
-    if len(block_bytes) < HEADER_LENGTH:
-        raise ValueError(f"Block data too short: got {len(block_bytes)} bytes, need at least {HEADER_LENGTH}")
-
-    # Extract full header
-    header = block_bytes[:HEADER_LENGTH]
-
-    # Parse header fields using struct
-    try:
-        version, prev_block, merkle_root, timestamp_bytes, bits, nonce = struct.unpack(
-            "<4s32s32s4s4s4s", header
-        )
-    except struct.error as e:
-        raise ValueError("Failed to parse block header") from e
-
-    return BlockHeader(
-        header=header,
-        version=version,
-        prev_block_hash=prev_block,
-        merkle_root=merkle_root,
-        timestamp=datetime.fromtimestamp(int.from_bytes(timestamp_bytes, byteorder='little'), tz=timezone.utc),
-        hash_target=bits,
-        nonce=nonce
-    )
-
-def parse_raw_block(f: BinaryIO, start: int) -> RawBlock:
-    f.seek(start)
-
-    # Read magic bytes
-    magic_bytes = f.read(4)
-    if len(magic_bytes) != 4:
-        raise ValueError("Expected 4 bytes")
-
-    # Read size of block data
-    size_bytes = f.read(4)
-    if len(size_bytes) != 4:
-        raise ValueError("Expected 4 bytes")
-    
-    # Compute size of block data (in bytes)
-    size = int.from_bytes(size_bytes, byteorder='little')
-    if size <= HEADER_LENGTH:    
-        raise ValueError(f"Block size too small: {size} bytes")
-    if size > 1_000_000_000:
-        raise ValueError(f"Block size too large: {size} bytes")
-
-    # Read block data
-    block_data = f.read(size)
-    if len(block_data) < size:
-        raise ValueError(f"Expected {size} bytes, but read {len(block_data)}")
-
-    # Get the number of transactions and the position of the transaction data
-    n_txs, tx_data_pos = get_compact_size(block_data, HEADER_LENGTH)
-
-    return RawBlock(
-        magic_bytes=magic_bytes,
-        size=size,
-        block_header=parse_block_header(block_data),
-        n_txs=n_txs,
-        txs=block_data[tx_data_pos:]  
-    )
 
 def main():
     xor_key, need = get_xor_key('blocks/xor.dat')
@@ -146,11 +41,11 @@ def main():
 
         # Read the block file        
         b = 0  # index of block to read
-        start = 0
+        start = 0  # start position of block in file to read raw block data
         with open(f'blocks/{BLOCK_FILE_TO_READ}', 'rb') as f:
             b += 1
             print(f"  Reading block #{b}...")
-            raw_block = parse_raw_block(f, start)
+            raw_block = RawBlock.parse(f, start)
             print(raw_block)
             exit()
 
