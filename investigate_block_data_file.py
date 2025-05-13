@@ -1,72 +1,13 @@
-from datetime import datetime, timezone
-from hashlib import sha256
 from typing import BinaryIO, Tuple
-from dataclasses import dataclass
 import struct
+from models import RawBlock, BlockHeader#, Transaction, Input, Output, ScriptSig, WitnessField, StackItem
+from datetime import datetime, timezone
 
 # invaluable resource: https://learnmeabitcoin.com/technical/block/blkdat/
 
 BLOCK_FILE_TO_READ = 'blk04930.dat'
-
 MAINNET_MAGIC_BYTES = b'\xf9\xbe\xb4\xd9'
 HEADER_LENGTH = 80  # Bitcoin block header total length (in bytes)
-
-@dataclass
-class BlockHeader:
-    header: bytes           # Full 80-byte block header
-    version: bytes          # First 4 bytes of the header
-    prev_block_hash: bytes  # Next 32 bytes
-    merkle_root: bytes      # Next 32 bytes
-    timestamp_bytes: bytes  # Next 4 bytes
-    hash_target: bytes      # Next 4 bytes
-    nonce: bytes            # Last 4 bytes
-
-    @classmethod
-    def get_timestamp(cls, timestamp_bytes: bytes) -> datetime:
-        """Convert timestamp bytes to a UTC datetime object."""
-        timestamp = int.from_bytes(timestamp_bytes, byteorder='little')
-        return datetime.fromtimestamp(timestamp, tz=timezone.utc)
-    
-    @property
-    def timestamp(self) -> datetime:
-        """Get the timestamp as a UTC datetime object."""
-        return self.get_timestamp(self.timestamp_bytes)
-    
-    @property
-    def block_hash(self) -> bytes:
-        """Get the block hash by hashing the header twice with SHA-256."""
-        return hash256(self.header)[::-1]
-    
-@dataclass
-class RawBlock:
-    magic_bytes: bytes
-    size: bytes
-    block_header: BlockHeader
-    n_txs: bytes
-    tx_data: bytes
-
-    @property
-    def is_mainnet(self) -> bool:
-        """Check if the block is from the mainnet."""
-        return self.magic_bytes == MAINNET_MAGIC_BYTES
-    
-    def __repr__(self) -> str:
-        return (
-            f"    Magic bytes (bytes)        : {self.magic_bytes.hex()}\n"
-            f"    Magic bytes == Mainnet     : {self.is_mainnet}\n"
-            f"    Block size                 : {self.size.hex()}\n"
-            f"    Block header               : {self.block_header.header.hex()}\n"
-            f"      Version (bit field)      : {self.block_header.version.hex()}\n"
-            f"      Prev block hash          : {self.block_header.prev_block_hash.hex()}\n"
-            f"      Merkle root              : {self.block_header.merkle_root.hex()}\n"
-            f"      Timestamp (bytes)        : {self.block_header.timestamp_bytes.hex()}\n"
-            f"      Timestamp                : {self.block_header.timestamp}\n"
-            f"      Hash target (aka, bits)  : {self.block_header.hash_target.hex()}\n"
-            f"      Nonce                    : {self.block_header.nonce.hex()}\n"
-            f"    # of txs                   : {self.n_txs.hex()}\n"
-            f"    Tx data (truncated)        : {self.tx_data.hex()[:50]}...{self.tx_data.hex()[-50:]}\n"
-            f"    Block hash                 : {self.block_header.block_hash.hex()}"
-        )
     
 def ghetto_debug_delineator(message: str) -> None:
     print("-" * 80)
@@ -83,16 +24,21 @@ def get_xor_key(xor_data_file: str) -> Tuple[bytes, bool]:
         if is_all_zeros(xor_key):
             need_to_deobfuscate = False
         return xor_key, need_to_deobfuscate
-    
-def hash256(block_header: bytes) -> bytes:
-    return sha256(sha256(block_header).digest()).digest()
 
 def get_compact_size(byte_data: bytes, pos: int) -> Tuple[int, int]:
-    # Starting from pos in byte_data, get the compact size integer.
-    # Return a tuple of (the compact size integer value, the position immediately after the compact size integer).
+    """
+    Get the compact size integer from byte_data starting at pos.
+    
+    Args:
+        byte_data: The input bytes containing the compact size integer.
+        pos: The starting position in byte_data.
+    
+    Returns:
+        A tuple of (compact size integer value, position immediately after the compact size integer).
+    """
     leading_byte = byte_data[pos]
     if leading_byte < 0xfd:
-        return leading_byte, pos + 1
+        return int.from_bytes(leading_byte), pos + 1
     elif leading_byte == 0xfd:
         return int.from_bytes(byte_data[pos+1:pos+3], 'little'), pos + 3
     elif leading_byte == 0xfe:
@@ -100,11 +46,11 @@ def get_compact_size(byte_data: bytes, pos: int) -> Tuple[int, int]:
     else:
         # note: should never happen...ow, the block's txs consume more than 4GB!
         return int.from_bytes(byte_data[pos+1:pos+9], 'little'), pos + 9
-    
+
 def display_bytes(data: bytes, endian: str = 'little') -> str:
     return f"{data.hex()} --> {int.from_bytes(data, byteorder=endian)}"
 
-def get_block_header_bytes(block_bytes: bytes) -> BlockHeader:
+def parse_block_header(block_bytes: bytes) -> BlockHeader:
     """Extract block header information from raw block bytes.
 
     Args:
@@ -131,7 +77,7 @@ def get_block_header_bytes(block_bytes: bytes) -> BlockHeader:
 
     # Parse header fields using struct
     try:
-        version, prev_block, merkle_root, timestamp, bits, nonce = struct.unpack(
+        version, prev_block, merkle_root, timestamp_bytes, bits, nonce = struct.unpack(
             "<4s32s32s4s4s4s", header
         )
     except struct.error as e:
@@ -142,45 +88,45 @@ def get_block_header_bytes(block_bytes: bytes) -> BlockHeader:
         version=version,
         prev_block_hash=prev_block,
         merkle_root=merkle_root,
-        timestamp_bytes=timestamp,
+        timestamp=datetime.fromtimestamp(int.from_bytes(timestamp_bytes, byteorder='little'), tz=timezone.utc),
         hash_target=bits,
         nonce=nonce
     )
 
-def get_raw_block_bytes(f: BinaryIO, start: int) -> RawBlock:
+def parse_raw_block(f: BinaryIO, start: int) -> RawBlock:
     f.seek(start)
 
     # Read magic bytes
     magic_bytes = f.read(4)
-    if len(magic_bytes) < 4:
-        raise EOFError("File ended before reading magic bytes")
+    if len(magic_bytes) != 4:
+        raise ValueError("Expected 4 bytes")
 
     # Read size of block data
     size_bytes = f.read(4)
-    if len(size_bytes) < 4:
-        raise EOFError("File ended before reading size bytes")
+    if len(size_bytes) != 4:
+        raise ValueError("Expected 4 bytes")
     
     # Compute size of block data (in bytes)
     size = int.from_bytes(size_bytes, byteorder='little')
     if size <= HEADER_LENGTH:    
-        raise ValueError(f"Invalid block size: {size}")
+        raise ValueError(f"Block size too small: {size} bytes")
     if size > 1_000_000_000:
         raise ValueError(f"Block size too large: {size} bytes")
 
     # Read block data
     block_data = f.read(size)
     if len(block_data) < size:
-        raise EOFError(f"Expected {size} bytes, but read {len(block_data)}")
+        raise ValueError(f"Expected {size} bytes, but read {len(block_data)}")
 
     # Get the number of transactions and the position of the transaction data
     n_txs, tx_data_pos = get_compact_size(block_data, HEADER_LENGTH)
 
     return RawBlock(
         magic_bytes=magic_bytes,
-        size=size_bytes,
-        block_header=get_block_header_bytes(block_data),
-        n_txs=block_data[HEADER_LENGTH:tx_data_pos],
-        tx_data=block_data[tx_data_pos:]  
+        size=size,
+        block_header=parse_block_header(block_data),
+        n_txs=n_txs,
+        txs=block_data[tx_data_pos:]  
     )
 
 def main():
@@ -204,7 +150,7 @@ def main():
         with open(f'blocks/{BLOCK_FILE_TO_READ}', 'rb') as f:
             b += 1
             print(f"  Reading block #{b}...")
-            raw_block = get_raw_block_bytes(f, start)
+            raw_block = parse_raw_block(f, start)
             print(raw_block)
             exit()
 
