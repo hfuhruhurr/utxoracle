@@ -179,10 +179,10 @@ print("Part 3...")
 #get current block height from local node and exit if connection not made
 block_count_b = Ask_Node(['getblockcount'])
 block_count = int(block_count_b)             #convert text to integer
-block_count_consensus = block_count-6
+consensus_block = block_count-6
 
 #get block header from current block height
-block_hash = Ask_Node(['getblockhash', str(block_count_consensus)]).decode().strip()
+block_hash = Ask_Node(['getblockhash', str(consensus_block)]).decode().strip()
 block_header_b = Ask_Node(['getblockheader', block_hash, 'true'])
 block_header = json.loads(block_header_b)
 
@@ -321,7 +321,7 @@ elif date_mode:
     #first estimate of the block height of the price day
     seconds_since_price_day = latest_time_in_seconds - price_day_seconds
     blocks_ago_estimate = round(144*float(seconds_since_price_day)/float(seconds_in_a_day))
-    price_day_block_estimate = block_count_consensus - blocks_ago_estimate
+    price_day_block_estimate = consensus_block - blocks_ago_estimate
     
     #check the time of the price day block estimate
     time_in_seconds, hash_end = get_block_time(price_day_block_estimate) 
@@ -466,7 +466,7 @@ print("Part 6...")
 print("\nMaping block locations in raw block files",flush=True)
 
 # standard variables for block readind and estiamted blocks per binary .blk file
-blocks_per_file=50 #generous, likely much more
+blocks_per_file = 50 # generous, likely much more
 Mainnet_flag = b'\xf9\xbe\xb4\xd9'
 Header_size = 80
 
@@ -516,35 +516,38 @@ def get_block_files(blocks_dir: str) -> List[str]:
     
     return block_files
 
-blk_files = get_block_files(blocks_dir)
+block_files = get_block_files(blocks_dir)
 
 # conservatively estimate the first and last blk file needed
-block_depth_start = block_count_consensus - block_nums_needed[0]
-last_blk_file_num = int(blk_files[-1][3:8])
-start_blk_index = last_blk_file_num - int(block_depth_start/blocks_per_file +1) - 1
-end_blk_index_est = last_blk_file_num - int(int(block_depth_start/128))
+# block_count_consensus is the consenus block
+# block_nums_needed[0] is the first block of the target day
+block_depth_start = consensus_block - block_nums_needed[0]
+# last block of target day
+last_blk_file_num = int(block_files[-1][3:8])
+start_blk_index = last_blk_file_num - int(block_depth_start / blocks_per_file + 1) - 1
+end_blk_index_est = last_blk_file_num - int(int(block_depth_start / 128))
 
 # read a swath of block files looking for the block hashes needeed
-blk_files = [f for f in blk_files if int(f[3:8]) >= start_blk_index]
+block_files = [f for f in block_files if int(f[3:8]) >= start_blk_index]
 print_next = 0
 block_file_num  = 0
-for blk_file in blk_files:
+for block_file in block_files:
     
-    #path to the next blk file
-    path = os.path.join(blocks_dir, blk_file)
+    # path to the next blk file
+    path = os.path.join(blocks_dir, block_file)
     
-    #print progress update
-    block_file_num+=1
-    if block_file_num/(end_blk_index_est-start_blk_index)*100 > print_next:
+    # print progress update
+    block_file_num += 1
+    if block_file_num / (end_blk_index_est - start_blk_index) * 100 > print_next:
         if print_next < 100:
-            print(str(print_next)+"%..",end="",flush=True)
-            print_next +=20
+            print(str(print_next) + "%..", end="", flush=True)
+            print_next += 20
     
-    #read the blk file
+    # read the blk file
     with open(path, "rb") as f:
         
         while True:
-            #read the headers to the block
+            # read the headers to the block
             start = f.tell()
             magic = f.read(4)
             if not magic or len(magic) < 4:
@@ -560,15 +563,15 @@ for blk_file in blk_files:
             if len(header) < Header_size:
                 break
 
-            #read the block hash and time stamp
+            # read the block hash and time stamp
             block_hash = sha256d(header)[::-1]  # big-endian
             block_hash_hex = block_hash.hex()
             timestamp = int.from_bytes(header[68:72], "little")
            
-            #add block to the list if a needed block
+            # add block to the list if a needed block
             if block_hash_hex in block_hashes_needed:
                 found_blocks[block_hash] = {
-                    "file": blk_file,
+                    "file": block_file,
                     "offset": start,
                     "block_size": block_size,
                     "time": timestamp
