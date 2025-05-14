@@ -84,6 +84,7 @@ class RawBlock:
     block_header: BlockHeader
     n_txs: int
     txs: bytes # List[Transaction]
+    block_height: Optional[int] = None
 
     @property
     def is_mainnet(self) -> bool:
@@ -91,7 +92,7 @@ class RawBlock:
         return self.magic_bytes == MAINNET_MAGIC_BYTES
     
     @classmethod
-    def parse(cls, f: BinaryIO, start: int) -> 'RawBlock':
+    def parse(cls, f: BinaryIO, start: int) -> Tuple['RawBlock', int]:
         """
         Parse a Bitcoin block from a binary file from the given start position.
 
@@ -101,23 +102,27 @@ class RawBlock:
         Returns:
             A RawBlock instance.
         """
-        f.seek(start)
+        pos = start
+        f.seek(pos)
 
         # Read magic bytes (4 bytes)
         magic_bytes = f.read(4)
-        if len(magic_bytes) < 4:
-            raise ValueError("Incomplete magic bytes; end of file or invalid block")
+        pos += 4
+        if len(magic_bytes) != 4:
+            raise ValueError(f"Magic bytes size issue: Expected 4 bytes, got {len(magic_bytes)} bytes")
 
         # Read size (4 bytes)
         size_bytes = f.read(4)
-        if len(size_bytes) < 4:
-            raise ValueError("Incomplete size field")
+        pos += 4
+        if len(size_bytes) != 4:
+            raise ValueError(f"Block size size issue: Expected 4 bytes, got {len(size_bytes)} bytes")
         size = int.from_bytes(size_bytes, 'little')
 
         # Read block_data (header + n_txs + transactions, based on size)
         block_data = f.read(size)
-        if len(block_data) < size:
-            raise ValueError(f"Incomplete block data: got {len(block_data)} bytes, expected {size}")
+        pos += size
+        if len(block_data) != size:
+            raise ValueError(f"Block data size issue: Expected {size} bytes, got {len(block_data)} bytes")
 
         # Parse block header (starts at byte 0 of block_data)
         block_header = cls.parse_block_header(block_data)
@@ -127,15 +132,16 @@ class RawBlock:
 
         # Transaction data (from tx_data_pos to end)
         tx_data = block_data[tx_data_pos:]
-        txs = cls.parse_txs(tx_data)
+        txs, block_height = cls.parse_txs(tx_data)
 
         return RawBlock(
             magic_bytes=magic_bytes,
             size=size,
             block_header=block_header,
             n_txs=n_txs,
-            txs=txs
-        )
+            txs=txs,
+            block_height=block_height
+        ), pos
     
     @staticmethod
     def parse_block_header(block_data: bytes) -> BlockHeader:
@@ -203,9 +209,10 @@ class RawBlock:
         # The compact size integer is 1 byte for values < 0xfd, 2 bytes for 0xfd, 4 bytes for 0xfe, and 8 bytes for 0xff.
         
     @staticmethod
-    def parse_txs(tx_data: bytes) -> List[Transaction]:
+    def parse_txs(tx_data: bytes) -> tuple[List[Transaction], int]:
         """Parse the transaction data into a list of Transaction objects."""
         transactions = []
+        coinbase_tx = True
         pos = 0
         while pos < len(tx_data):
             # Read transaction version
@@ -250,27 +257,34 @@ class RawBlock:
             # Read inputs
             inputs = []
             for _ in range(n_inputs):
-                # Read txid (32 bytes)
+                # Read previous outpoint txid (32 bytes)
                 utox_txid = tx_data[pos:pos+32]
                 pos += 32
                 inputs_bytes += utox_txid
 
-                # Read vout (4 bytes)
-                utxos_vout_bytes = tx_data[pos:pos+4]
-                utxo_vout = int.from_bytes(utxos_vout_bytes, byteorder='little')
+                # Read previous outpoint vout (4 bytes)
+                utxo_vout_bytes = tx_data[pos:pos+4]
+                utxo_vout = int.from_bytes(utxo_vout_bytes, byteorder='little')
                 pos += 4
-                inputs_bytes += utxos_vout_bytes
+                inputs_bytes += utxo_vout_bytes
 
                 # Read script size (compact size integer)
                 # script size can be 0 -> non-legacy locking scripts 
                 script_size, pos, script_size_bytes = RawBlock.get_compact_size(tx_data, pos)
+                if coinbase_tx and script_size > 100:
+                    raise ValueError(f"Coinbase script size must be <= 100 bytes, got {script_size:,} bytes")
+                if not coinbase_tx and script_size > 10_000:
+                    raise ValueError(f"Input script size must be <= 10,000 bytes, got {script_size:,} bytes")
                 inputs_bytes += script_size_bytes
 
                 # Read script (variable length)
                 script = tx_data[pos:pos+script_size] if script_size > 0 else b''
                 pos += script_size
                 inputs_bytes += script
-
+                if coinbase_tx:
+                    block_height_size = int.from_bytes(script[0:1])
+                    block_height = int.from_bytes(script[1:block_height_size+1], byteorder='little')
+                    
                 # Read sequence (4 bytes)
                 sequence = tx_data[pos:pos+4]
                 pos += 4
@@ -362,6 +376,8 @@ class RawBlock:
                 raise ValueError(f"Per BIP-144, expected 4 bytes for locktime, got {len(lock_time)} bytes")
             pos += 4
 
+            coinbase_tx = False
+
             transactions.append(Transaction(
                 version=version,
                 version_bytes=version_bytes,
@@ -379,7 +395,7 @@ class RawBlock:
                 preimage=tx_hash(version_bytes, inputs_bytes, outputs_bytes, lock_time)[1]
             ))
 
-        return transactions
+        return transactions, block_height
     
     def __repr__(self) -> str:
         result = (
@@ -393,25 +409,26 @@ class RawBlock:
             f"      Hash target (aka, bits)  : {self.block_header.hash_target[::-1].hex()}\n"
             f"      Nonce                    : {self.block_header.nonce[::-1].hex()}\n"
             f"    Block hash                 : {self.block_header.block_hash.hex()}\n"
-            f"    Block height               : TBD\n"
+            f"    Block height               : {self.block_height:,}\n"
             f"    # of txs                   : {self.n_txs:,}\n"
         )
         
-        result += "\n    Transactions:\n"
-        for i, tx in enumerate(self.txs, 1):
-            if i <= 3 or i == self.n_txs:
-                result += (
-                    f"    --------------------------\n"
-                    f"    Transaction #{i}:\n"
-                    # f"      preimage                : {tx.preimage}\n"
-                    f"      txid                    : {tx.txid}\n"
-                    f"      Version                 : {tx.version}\n"
-                    f"      Marker                  : {tx.marker[::-1].hex() if tx.marker else 'None'}\n"
-                    f"      Flag                    : {tx.flag[::-1].hex() if tx.flag else 'None'}\n"
-                    f"      # inputs                : {tx.n_inputs:,}\n"
-                    f"      # outputs               : {tx.n_outputs:,}\n"
-                    f"      # witness fields        : {len(tx.witness) if tx.witness else 0}\n"
-                    f"      Locktime                : {tx.locktime[::-1].hex()}\n"
-                )
+        # result += "\n    Transactions:\n"
+        # for i, tx in enumerate(self.txs, 1):
+        #     if i <= 3 or i == self.n_txs:
+        #         result += (
+        #             f"    --------------------------\n"
+        #             f"    Transaction #{i}:\n"
+        #             # f"      preimage                : {tx.preimage}\n"
+        #             f"      txid                    : {tx.txid}\n"
+        #             f"      Version                 : {tx.version}\n"
+        #             f"      Marker                  : {tx.marker[::-1].hex() if tx.marker else 'None'}\n"
+        #             f"      Flag                    : {tx.flag[::-1].hex() if tx.flag else 'None'}\n"
+        #             f"      # inputs                : {tx.n_inputs:,}\n"
+        #             f"      # outputs               : {tx.n_outputs:,}\n"
+        #             f"      # witness fields        : {len(tx.witness) if tx.witness else 0}\n"
+        #             f"      Locktime                : {tx.locktime[::-1].hex()}\n"
+        #         )
+
         return result + "\n"
         

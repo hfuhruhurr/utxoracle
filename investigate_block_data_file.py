@@ -27,7 +27,6 @@ def display_bytes(data: bytes, endian: str = 'little') -> str:
 def display_preimage(preimage: str) -> None:
     print(format_hex_string(preimage))
 
-
 def format_hex_string(hex_str, space_interval=8, hex_per_line=80):
     # Remove any existing spaces or newlines
     hex_str = hex_str.replace(" ", "").replace("\n", "")
@@ -55,7 +54,6 @@ def format_hex_string(hex_str, space_interval=8, hex_per_line=80):
     
     return "\n".join(result)
 
-
 def debug_preimages():
     # This preimage will create the transaction txid = b92c03f30b602c9722e82220ddd023907fe90f338d7818dc887b32b0f170ec9d
     known_good_preimage = '01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff63034ead0d04404321687c204d415241204d61646520696e2055534120f09f87baf09f87b8207c763033fabe6d6ddba189b7152a01f2dc78587b891b6056da1f740e23178396b08b7c5c66a0d88701000000000000001237333e640000000000ffffffffffffffff02f620f21200000000160014d16827c45ab3b3f961817257e6279ab35e8e25550000000000000000266a24aa21a9ed155cd0bc52b43013e271778c603991464f47ed3c56bc88d9d1f6602d15215804a78cbbe5'
@@ -68,7 +66,6 @@ def debug_preimages():
     print("My preimage:")
     display_preimage(my_preimage)
     print()
-
 
 def decipher_tx_id_creation():
     # from https://raw.githubusercontent.com/ragestack/blockchain-parser/refs/heads/master/result/blk_example.txt
@@ -170,16 +167,16 @@ def main():
     # decipher_tx_id_creation()
     # exit()
 
-    xor_key, need = get_xor_key('blocks/xor.dat')
-    print(f"XOR key: {xor_key.hex()}")
+    # xor_key, need = get_xor_key('blocks/xor.dat')
+    # print(f"XOR key: {xor_key.hex()}")
     
-    if need:
-        print("Need to deobfuscate the data.")
-        print("\nWrite some code to do this eventually.")
-        exit()
-    else:
-        print("No need to deobfuscate the data.")
-        print("-" * 80)
+    # if need:
+    #     print("Need to deobfuscate the data.")
+    #     print("\nWrite some code to do this eventually.")
+    #     exit()
+    # else:
+    #     print("No need to deobfuscate the data.")
+    #     print("-" * 80)
         
         print(f"Reading binary block file {BLOCK_FILE_TO_READ}...")
         print("-" * 80)
@@ -187,12 +184,17 @@ def main():
         # Read the block file        
         b = 0  # index of block to read
         start = 0  # start position of block in file to read raw block data
-        with open(f'blocks/{BLOCK_FILE_TO_READ}', 'rb') as f:
-            b += 1
-            print(f"  Reading block #{b}...")
-            raw_block = RawBlock.parse(f, start)
-            print(raw_block)
-            exit()
+        raw_block_file_path = f'blocks/{BLOCK_FILE_TO_READ}'
+        with open(f'{raw_block_file_path}', 'rb') as f:
+            print(f"len {BLOCK_FILE_TO_READ} = {len(f.read()):,} bytes")
+            while True:
+                b += 1
+                print(f"  Reading block #{b}...")
+                raw_block, start = RawBlock.parse(f, start)
+                print(raw_block)
+                if b >= 2:
+                    print("  Done reading blocks.")
+                    exit()
 
             # Extract the block height from the block data.
             # It's contained in the coinbase transaction (required by BIP-34).
