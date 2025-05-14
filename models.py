@@ -53,7 +53,7 @@ class WitnessField:
 
 @dataclass
 class Transaction:
-    version: bytes
+    version: int
     marker: Optional[bytes] 
     flag: Optional[bytes]
     n_inputs: int
@@ -191,7 +191,8 @@ class RawBlock:
         pos = 0
         while pos < len(tx_data):
             # Read transaction version
-            version = tx_data[pos:pos+4]
+            version_bytes = tx_data[pos:pos+4]
+            version = int.from_bytes(version_bytes, byteorder='little')
             pos += 4
 
             # Read marker and flag (if present)
@@ -313,11 +314,11 @@ class RawBlock:
         
         result += "\n    Transactions:\n"
         for i, tx in enumerate(self.txs, 1):
-            if i <= 3:
+            if i <= 3 or i == self.n_txs:
                 result += (
                     f"    --------------------------\n"
                     f"    Transaction #{i}:\n"
-                    f"      Version                 : {tx.version[::-1].hex()}\n"
+                    f"      Version                 : {tx.version}\n"
                     f"      Marker                  : {tx.marker[::-1].hex() if tx.marker else 'None'}\n"
                     f"      Flag                    : {tx.flag[::-1].hex() if tx.flag else 'None'}\n"
                     f"      # inputs                : {tx.n_inputs:,}\n"
