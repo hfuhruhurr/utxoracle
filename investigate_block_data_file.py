@@ -24,7 +24,152 @@ def get_xor_key(xor_data_file: str) -> Tuple[bytes, bool]:
 def display_bytes(data: bytes, endian: str = 'little') -> str:
     return f"{data.hex()} --> {int.from_bytes(data, byteorder=endian)}"
 
+def display_preimage(preimage: str) -> None:
+    print(format_hex_string(preimage))
+
+
+def format_hex_string(hex_str, space_interval=8, hex_per_line=80):
+    # Remove any existing spaces or newlines
+    hex_str = hex_str.replace(" ", "").replace("\n", "")
+    
+    # Split into chunks of space_interval hex chars
+    chunks = [hex_str[i:i+space_interval] for i in range(0, len(hex_str), space_interval)]
+    
+    # Group chunks to form lines with hex_per_line hex chars
+    result = []
+    chars_per_line = 0
+    current_line = []
+    
+    for chunk in chunks:
+        if chars_per_line + len(chunk) <= hex_per_line:
+            current_line.append(chunk)
+            chars_per_line += len(chunk)
+        else:
+            result.append(" ".join(current_line))
+            current_line = [chunk]
+            chars_per_line = len(chunk)
+    
+    # Append the last line if it exists
+    if current_line:
+        result.append(" ".join(current_line))
+    
+    return "\n".join(result)
+
+
+def debug_preimages():
+    # This preimage will create the transaction txid = b92c03f30b602c9722e82220ddd023907fe90f338d7818dc887b32b0f170ec9d
+    known_good_preimage = '01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff63034ead0d04404321687c204d415241204d61646520696e2055534120f09f87baf09f87b8207c763033fabe6d6ddba189b7152a01f2dc78587b891b6056da1f740e23178396b08b7c5c66a0d88701000000000000001237333e640000000000ffffffffffffffff02f620f21200000000160014d16827c45ab3b3f961817257e6279ab35e8e25550000000000000000266a24aa21a9ed155cd0bc52b43013e271778c603991464f47ed3c56bc88d9d1f6602d15215804a78cbbe5'
+
+    my_preimage = "01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff63034ead0d04404321687c204d415241204d61646520696e2055534120f09f87baf09f87b8207c763033fabe6d6ddba189b7152a01f2dc78587b891b6056da1f740e23178396b08b7c5c66a0d88701000000000000001237333e640000000000fffffffffffffffff620f21200000000160014d16827c45ab3b3f961817257e6279ab35e8e25550000000000000000266a24aa21a9ed155cd0bc52b43013e271778c603991464f47ed3c56bc88d9d1f6602d15215804a78cbbe5"
+
+    print("Known good preimage:")
+    display_preimage(known_good_preimage)
+    print()
+    print("My preimage:")
+    display_preimage(my_preimage)
+    print()
+
+
+def decipher_tx_id_creation():
+    # from https://raw.githubusercontent.com/ragestack/blockchain-parser/refs/heads/master/result/blk_example.txt
+    from models import RawBlock, hash256
+
+    # courtesy of https://bitcoin.stackexchange.com/questions/120354/how-to-compute-a-txid-of-any-bitcoin-transaction-in-python
+    # first, looked the block hash up on mempool.space to get the transaction txid
+    # then, got raw tx data from  https://blockchain.info/rawtx/<transaction txid>?format=hex
+    raw_tx_hash_hex = "010000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff63034ead0d04404321687c204d415241204d61646520696e2055534120f09f87baf09f87b8207c763033fabe6d6ddba189b7152a01f2dc78587b891b6056da1f740e23178396b08b7c5c66a0d88701000000000000001237333e640000000000ffffffffffffffff02f620f21200000000160014d16827c45ab3b3f961817257e6279ab35e8e25550000000000000000266a24aa21a9ed155cd0bc52b43013e271778c603991464f47ed3c56bc88d9d1f6602d1521580401200000000000000000000000000000000000000000000000000000000000000000a78cbbe5"
+    # raw_tx_hash_hex = "01000000000101189a3f6fbfb614264c8176cd2d3836882afc3c0940d698d6b481f3e5cb733c200000000000ffffffff0240420f00000000001976a914341b568f59229818c460b1795ad48cd78895c54d88ac6eeefa4a00000000160014d701ce5e753bd9454d343c8a3b86d84a3c34dbf502473044022001609cd43eb8e9b8f8438eded9f6b10bad32efd7620724ccd2ed5277c0c6a3ae02200f0c1c3f4c409ada536d2363a2d8bdad418df67fed9b36bfa4482bd9985bf396012102ee3c98964dd1bfe13bee16c0b95fcf8281f12c5885d1fcb7b59fc2cb01ca763200000000"
+    raw_tx_hash = bytes.fromhex(raw_tx_hash_hex)
+
+    print(f"There are {len(raw_tx_hash)} bytes in the raw tx hash.")
+    
+    version = raw_tx_hash[0:4]
+    marker = raw_tx_hash[4:5]
+    flag = raw_tx_hash[5:6]
+    
+    # Inputs
+    n_inputs, inputs_pos, n_inputs_bytes = RawBlock.get_compact_size(raw_tx_hash, 6)
+    utxo_txid = raw_tx_hash[inputs_pos:inputs_pos+32]
+    utxo_vout = raw_tx_hash[inputs_pos+32:inputs_pos+36]
+    input_script_size, script_sig_pos, input_script_size_bytes = RawBlock.get_compact_size(raw_tx_hash, inputs_pos+36)
+    input_script = raw_tx_hash[script_sig_pos:script_sig_pos+input_script_size]
+    sequence = raw_tx_hash[script_sig_pos+input_script_size:script_sig_pos+input_script_size+4]
+    
+    # Outputs
+    n_outputs, outputs_pos, n_outputs_bytes = RawBlock.get_compact_size(raw_tx_hash, script_sig_pos+input_script_size+4)
+    o1_amount = raw_tx_hash[outputs_pos:outputs_pos+8]
+    o1_script_size, o1_script_pos, o1_script_size_bytes = RawBlock.get_compact_size(raw_tx_hash, outputs_pos+8)
+    o1_script = raw_tx_hash[o1_script_pos:o1_script_pos+o1_script_size]
+    o2_amount = raw_tx_hash[o1_script_pos+o1_script_size:o1_script_pos+o1_script_size+8]
+    
+    o2_script_size, o2_script_pos, o2_script_size_bytes = RawBlock.get_compact_size(raw_tx_hash, o1_script_pos+o1_script_size+8)
+    o2_script = raw_tx_hash[o2_script_pos:o2_script_pos+o2_script_size]
+    
+    # Witness
+    witness = raw_tx_hash[o2_script_pos+o2_script_size:-4]
+    # n_stack_items, witness_pos, n_stack_items_bytes = RawBlock.get_compact_size(raw_tx_hash, o2_script_pos+o2_script_size)
+    # print(f"n_stack_items: {n_stack_items}")
+
+    # Locktime
+    locktime = raw_tx_hash[-4:]
+
+    # Preimage (the blob to be hashed to create the txid)
+    preimage = version + n_inputs_bytes + utxo_txid + utxo_vout + input_script_size_bytes + input_script + sequence
+    preimage += n_outputs_bytes + o1_amount + o1_script_size_bytes + o1_script
+    preimage += o2_amount + o2_script_size_bytes + o2_script
+    preimage += locktime
+
+    reference_preimage = '0100000001189a3f6fbfb614264c8176cd2d3836882afc3c0940d698d6b481f3e5cb733c200000000000ffffffff0240420f00000000001976a914341b568f59229818c460b1795ad48cd78895c54d88ac6eeefa4a00000000160014d701ce5e753bd9454d343c8a3b86d84a3c34dbf500000000'
+
+    
+    print(f"\nVersion: {version.hex()}")
+    print(f"Marker: {marker.hex()}")
+    print(f"Flag: {flag.hex()}")
+    print(f"\nn_inputs: {n_inputs}")
+    print(f"n_inputs: {n_inputs_bytes.hex()}")
+    print(f"utxo txid: {utxo_txid.hex()}")
+    print(f"utxo vout: {utxo_vout.hex()}")
+    print(f"input script size: {input_script_size_bytes.hex()}")
+    print(f"input script: {input_script.hex()[:40]}...{input_script.hex()[-40:]}")
+    print(f"sequence: {sequence.hex()}")
+    print(f"\nn_outputs: {n_outputs}")
+    print(f"n_outputs: {n_outputs_bytes.hex()}")
+    print("Output 1:")
+    print(f"    o1 amount: {o1_amount.hex()} --> {int.from_bytes(o1_amount, byteorder='little'):,} satoshis")
+    print(f"    o1 script size: {o1_script_size_bytes.hex()} --> {int.from_bytes(o1_script_size_bytes, byteorder='little'):,} bytes")
+    print(f"    o1 script: {o1_script.hex()[:40]}...{o1_script.hex()[-40:]}")
+    print("Output 2:")
+    print(f"    o2 amount: {o2_amount.hex()} --> {int.from_bytes(o2_amount, byteorder='little'):,} satoshis")
+    print(f"    o2 script size: {o2_script_size_bytes.hex()} --> {int.from_bytes(o2_script_size_bytes, byteorder='little'):,} bytes")
+    print(f"    o2 script: {o2_script.hex()[:40]}...{o2_script.hex()[-40:]}")
+    print(f"\nWitness: {witness.hex()[:40]}...{witness.hex()[-40:]}")
+    print(f"\nLocktime: {locktime.hex()}")
+
+    print(f"\nThere are {len(preimage.hex())} hex chars in the preimage.")
+    
+    print(preimage.hex())
+    # Debugging my preimage versus the reference preimage
+    # print("\npreimage:")
+    # print(f"{preimage.hex()[:81]}")
+    # print(reference_preimage[:81])
+    # print("\n")
+    # print(f"{preimage.hex()[81:162]}")
+    # print(reference_preimage[81:162])
+    # print("\n")
+    # print(f"{preimage.hex()[162:]}")
+    # print(reference_preimage[162:])
+
+    # print(f"\nDoes my preimage match the reference preimage? {preimage.hex() == reference_preimage}")
+
+    print(f"\nTransaction txid: {hash256(preimage)[::-1].hex()}\n")
+
 def main():
+    # debug_preimages()
+    # exit()
+
+    # decipher_tx_id_creation()
+    # exit()
+
     xor_key, need = get_xor_key('blocks/xor.dat')
     print(f"XOR key: {xor_key.hex()}")
     

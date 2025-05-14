@@ -12,13 +12,15 @@ HEADER_LENGTH = 80  # Bitcoin block header total length (in bytes)
 def hash256(byte_data: bytes) -> bytes:
     return sha256(sha256(byte_data).digest()).digest()
 
-def tx_hash(version: bytes, inputs: bytes, outputs: bytes, locktime: bytes) -> bytes:
+def tx_hash(version: bytes, inputs: bytes, outputs: bytes, locktime: bytes) -> (bytes, str):
     # The txid is the double SHA-256 hash of the transaction data
     # The transaction data is the version, inputs, outputs, and locktime
     # The marker and flag are not included in the txid calculation
-    tx_data = version + inputs + outputs + locktime
-    return hash256(tx_data)[::-1]
+        
+    preimage = version + inputs + outputs + locktime
 
+    return hash256(preimage)[::-1].hex(), preimage.hex()
+    
 @dataclass
 class BlockHeader:
     header: bytes           # Full 80-byte block header
@@ -73,6 +75,7 @@ class Transaction:
     witness: Optional[List[WitnessField]] 
     locktime: bytes
     txid: bytes
+    preimage: str
 
 @dataclass
 class RawBlock:
@@ -229,6 +232,11 @@ class RawBlock:
                 marker = None
                 flag = None
             
+            # --------------------------------------------------------------------------------
+            # Start of the inputs section
+            # --------------------------------------------------------------------------------
+            inputs_bytes = b''
+            
             # Read number of inputs
             n_inputs, pos, n_input_bytes = RawBlock.get_compact_size(tx_data, pos)
             if n_inputs < 1:
@@ -237,10 +245,10 @@ class RawBlock:
                 raise ValueError(f"Though no formal limit, {n_inputs:,} is a ridiculous number of inputs")
             if len(n_input_bytes) < 1:
                 raise ValueError(f"Per BIP-144, expected at least 1 byte for n_inputs, got {len(n_input_bytes)} bytes")
-            
+            inputs_bytes += n_input_bytes
+
             # Read inputs
             inputs = []
-            inputs_bytes = b''
             for _ in range(n_inputs):
                 # Read txid (32 bytes)
                 utox_txid = tx_data[pos:pos+32]
@@ -273,6 +281,11 @@ class RawBlock:
             if len(inputs_bytes) < 41:
                 raise ValueError(f"Per BIP-144, expected at least 41 bytes for inputs, got {len(inputs_bytes)} bytes")
             
+            # --------------------------------------------------------------------------------
+            # Start of the outputs section
+            # --------------------------------------------------------------------------------
+            outputs_bytes = b''
+
             # Read number of outputs
             n_outputs, pos, n_outputs_bytes = RawBlock.get_compact_size(tx_data, pos)
             if n_outputs < 1:
@@ -281,10 +294,10 @@ class RawBlock:
                 raise ValueError(f"Though no formal limit, {n_outputs:,} is a ridiculous number of outputs")
             if len(n_outputs_bytes) < 1:
                 raise ValueError(f"Per BIP-144, expected at least 1 byte for n_outputs, got {len(n_outputs_bytes)} bytes")
-            
+            outputs_bytes += n_outputs_bytes
+
             # Read outputs
             outputs = []
-            outputs_bytes = b''
             for _ in range(n_outputs):
                 # Read amount (8 bytes)
                 amount_bytes = tx_data[pos:pos+8]
@@ -306,13 +319,20 @@ class RawBlock:
             if len(outputs_bytes) < 9:
                 raise ValueError(f"Per BIP-144, expected at least 9 bytes for outputs, got {len(outputs_bytes)} bytes")
             
-            # Read witness (if present)
-            # There is a set of stack_items for each input
+            # --------------------------------------------------------------------------------
+            # Start of the witness section
+            #
+            # The witness section is only present if the transaction has a witness flag.
+            #
+            # There is a set of stack_items for each input.
+            #
             # Each stack_item is:
             #     - a compact size integer (size of the upcoming item)
             #     - the item data
+            # --------------------------------------------------------------------------------
+            witness_bytes = b''
+
             if witness_flag:
-                witness_bytes = b''
                 witness_fields = []
                 for _ in range(n_inputs):
                     # Read the number of stack items
@@ -355,7 +375,8 @@ class RawBlock:
                 outputs_bytes=outputs_bytes,
                 witness=witness,
                 locktime=lock_time,
-                txid=tx_hash(version_bytes, inputs_bytes, outputs_bytes, lock_time)
+                txid=tx_hash(version_bytes, inputs_bytes, outputs_bytes, lock_time)[0],
+                preimage=tx_hash(version_bytes, inputs_bytes, outputs_bytes, lock_time)[1]
             ))
 
         return transactions
@@ -382,7 +403,8 @@ class RawBlock:
                 result += (
                     f"    --------------------------\n"
                     f"    Transaction #{i}:\n"
-                    f"      txid                    : {tx.txid.hex()}\n"
+                    # f"      preimage                : {tx.preimage}\n"
+                    f"      txid                    : {tx.txid}\n"
                     f"      Version                 : {tx.version}\n"
                     f"      Marker                  : {tx.marker[::-1].hex() if tx.marker else 'None'}\n"
                     f"      Flag                    : {tx.flag[::-1].hex() if tx.flag else 'None'}\n"
