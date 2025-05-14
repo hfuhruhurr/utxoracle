@@ -12,14 +12,20 @@ HEADER_LENGTH = 80  # Bitcoin block header total length (in bytes)
 def hash256(byte_data: bytes) -> bytes:
     return sha256(sha256(byte_data).digest()).digest()
 
-def tx_hash(version: bytes, inputs: bytes, outputs: bytes, locktime: bytes) -> (bytes, str):
+def tx_hash(version: bytes, inputs: bytes, outputs: bytes, locktime: bytes) -> tuple[bytes, str]:
     # The txid is the double SHA-256 hash of the transaction data
     # The transaction data is the version, inputs, outputs, and locktime
     # The marker and flag are not included in the txid calculation
         
-    preimage = version + inputs + outputs + locktime
+    # Using btyearray for increased performance
+    preimage = bytearray(len(version) + len(inputs) + len(outputs) + len(locktime))
+    pos = 0
+    for data in (version, inputs, outputs, locktime):
+        preimage[pos:pos + len(data)] = data
+        pos += len(data)
+    hashed = hash256(preimage)
 
-    return hash256(preimage)[::-1].hex(), preimage.hex()
+    return hashed[::-1].hex(), preimage.hex()
     
 @dataclass
 class BlockHeader:
@@ -83,8 +89,8 @@ class RawBlock:
     size: int
     block_header: BlockHeader
     n_txs: int
-    txs: bytes # List[Transaction]
-    block_height: Optional[int] = None
+    txs: List[Transaction]
+    block_height: int
 
     @property
     def is_mainnet(self) -> bool:
@@ -271,6 +277,7 @@ class RawBlock:
                 # Read script size (compact size integer)
                 # script size can be 0 -> non-legacy locking scripts 
                 script_size, pos, script_size_bytes = RawBlock.get_compact_size(tx_data, pos)
+                # script size limits from https://developer.bitcoin.org/reference/transactions.html
                 if coinbase_tx and script_size > 100:
                     raise ValueError(f"Coinbase script size must be <= 100 bytes, got {script_size:,} bytes")
                 if not coinbase_tx and script_size > 10_000:
@@ -413,22 +420,22 @@ class RawBlock:
             f"    # of txs                   : {self.n_txs:,}\n"
         )
         
-        # result += "\n    Transactions:\n"
-        # for i, tx in enumerate(self.txs, 1):
-        #     if i <= 3 or i == self.n_txs:
-        #         result += (
-        #             f"    --------------------------\n"
-        #             f"    Transaction #{i}:\n"
-        #             # f"      preimage                : {tx.preimage}\n"
-        #             f"      txid                    : {tx.txid}\n"
-        #             f"      Version                 : {tx.version}\n"
-        #             f"      Marker                  : {tx.marker[::-1].hex() if tx.marker else 'None'}\n"
-        #             f"      Flag                    : {tx.flag[::-1].hex() if tx.flag else 'None'}\n"
-        #             f"      # inputs                : {tx.n_inputs:,}\n"
-        #             f"      # outputs               : {tx.n_outputs:,}\n"
-        #             f"      # witness fields        : {len(tx.witness) if tx.witness else 0}\n"
-        #             f"      Locktime                : {tx.locktime[::-1].hex()}\n"
-        #         )
+        result += "\n    Transactions:\n"
+        for i, tx in enumerate(self.txs, 1):
+            if i <= 3 or i == self.n_txs:
+                result += (
+                    f"    --------------------------\n"
+                    f"    Transaction #{i}:\n"
+                    # f"      preimage                : {tx.preimage}\n"
+                    f"      txid                    : {tx.txid}\n"
+                    f"      Version                 : {tx.version}\n"
+                    f"      Marker                  : {tx.marker[::-1].hex() if tx.marker else 'None'}\n"
+                    f"      Flag                    : {tx.flag[::-1].hex() if tx.flag else 'None'}\n"
+                    f"      # inputs                : {tx.n_inputs:,}\n"
+                    f"      # outputs               : {tx.n_outputs:,}\n"
+                    f"      # witness fields        : {len(tx.witness) if tx.witness else 0}\n"
+                    f"      Locktime                : {tx.locktime[::-1].hex()}\n"
+                )
 
         return result + "\n"
         
