@@ -8,7 +8,11 @@ import json
 from hashlib import sha256  # Part 6
 import paramiko  # Part 6
 from typing import List  # Part 6
-
+import struct
+from math import log10 
+import hashlib
+from io import BytesIO
+from struct import unpack
 
 print('-' * 80)
 print('Let\'s go, Simple Steve style!')
@@ -669,26 +673,38 @@ for n in range(0, number_of_bins):
 
 
 ##############################################################################
-
+#
 #  Part 8) Get all output amounts from all block on target day
-
+#
+#  GOAL: Read all target day blocks to construct the following lists:
+#           - raw_outputs: list of all output values
+#           - block_heights_dec: list of all block heights
+#           - block_times_dec: list of all block times
+#
+#        All other lists created in this step are not used outside this part.
+#           - output_values_to_include
+#           - input_scripts
+#           - prev_txids
+#           - output_scripts
+#
 ##############################################################################
 
 # This section of the program will take the most time as it requests all 
 # blocks from the node on the price day. It readers every transaction (tx)
 # from those blocks and places each tx output value into the bell curve.
 # New in version 8 are filters that disallow the following types of transactions
-# as they have been found to be unlikely to be round p2p usd transactions: coinbase,
-# greater than 5 inputs, greater than 2 outputs, only one output, has op_return,
-# has witness data > 500 bytes, and has an input created on the same day.
+# as they have been found to be unlikely to be round p2p usd transactions: 
+#   - coinbase
+#   - greater than 5 inputs
+#   - greater than 2 outputs
+#   - only one output
+#   - has op_return
+#   - has witness data > 500 bytes
+#   - has an input created on the same day
 
 print("\nLoading every transaction from every block",flush=True)
 
-#shortcut for reading bytes of data from the block file
-import struct
-from math import log10 
-import hashlib
-def read_varint(f):
+def read_varint(f) -> int:
     i = f.read(1)
     if not i:
         return 0
@@ -703,8 +719,6 @@ def read_varint(f):
         val = struct.unpack("<Q", f.read(8))[0]
     return val
 
-#shortcut for encoding variable size integers to bytes
-from io import BytesIO
 def encode_varint(i: int) -> bytes:
     assert i >= 0
     if i < 0xfd:
@@ -716,9 +730,10 @@ def encode_varint(i: int) -> bytes:
     else:
         return b'\xff' + i.to_bytes(8, 'little')
 
-#shortcut for computing the txid because blk files don't store txids
 def compute_txid(raw_tx_bytes: bytes) -> bytes:
-    
+    # shortcut for computing the txid because blk files don't store txids
+    # a lot of duplicate effort here...we already read the files 
+
     stream = BytesIO(raw_tx_bytes)
 
     # Read version
@@ -727,7 +742,7 @@ def compute_txid(raw_tx_bytes: bytes) -> bytes:
     # Peek at marker/flag to detect SegWit
     marker = stream.read(1)
     flag = stream.read(1)
-    is_segwit = (marker == b'\x00' and flag == b'\x01')
+    is_segwit = (marker == b'\x00' and flag == b'\x01') # flag just needs to be non-zero
 
     if not is_segwit:
         # Legacy tx: rewind and hash full raw tx
@@ -740,7 +755,7 @@ def compute_txid(raw_tx_bytes: bytes) -> bytes:
 
         # Inputs
         input_count = read_varint(stream)
-        stripped_tx += encode_varint(input_count)
+        stripped_tx += encode_varint(input_count) # seems wasteful to encode something that's be decoded already
         for _ in range(input_count):
             stripped_tx += stream.read(32)  # prev txid
             stripped_tx += stream.read(4)   # vout index
@@ -770,9 +785,7 @@ def compute_txid(raw_tx_bytes: bytes) -> bytes:
 
     return hashlib.sha256(hashlib.sha256(stripped_tx).digest()).digest()[::-1]
 
-
-#initialize output lists and variables
-from struct import unpack
+# initialize output lists and variables
 todays_txids = set()
 raw_outputs = []
 block_heights_dec = []
@@ -780,20 +793,20 @@ block_times_dec = []
 print_next = 0
 block_num = 0
 
-#loop through all found blocks
+# loop through all found blocks
 for block_hash, meta in found_blocks.items():
     
-    #init variables for next block
+    # init variables for next block
     block_num += 1
     num_block_txs = 0
-    txs_to_add = []
+    output_values_to_include = []
     
-    #print progress update
-    if block_num/len(block_nums_needed)*100 > print_next:
-        print(str(print_next)+"%..",end="", flush=True)
-        print_next +=20
+    # print progress update
+    if block_num/len(block_nums_needed) * 100 > print_next:
+        print(str(print_next) + "%..", end="", flush=True)
+        print_next += 20
     
-    #get the location of the block on the hard drive
+    # get the location of the block on the hard drive
     file_path = os.path.join(blocks_dir, meta["file"])
     with open(file_path, "rb") as f:
         
@@ -804,9 +817,10 @@ for block_hash, meta in found_blocks.items():
         tx_count = read_varint(f)
 
         #loop through all transactions 
-        for tx_index in range(tx_count):
+        for t in range(tx_count):
             num_block_txs += 1
-             
+
+            # ugh...we're doing this again (3rd time?) 
             # read tx version type
             start_tx = f.tell()
             version = f.read(4)
@@ -819,13 +833,13 @@ for block_hash, meta in found_blocks.items():
 
             # read input count
             input_count = read_varint(f)
-            inputs = []
+            input_scripts = []
             has_op_return = False
             witness_exceeds = False
             is_coinbase = False
-            input_txids = []
+            prev_txids = []
             
-            #loop through inputs
+            # loop through inputs
             for _ in range(input_count):
                 prev_txid = f.read(32)
                 prev_index = f.read(4)
@@ -833,21 +847,21 @@ for block_hash, meta in found_blocks.items():
                 script = f.read(script_len)
                 f.read(4)  # sequence
                 
-                #add input txids to a list
-                input_txids.append(prev_txid[::-1].hex())
+                # add input txids to a list
+                prev_txids.append(prev_txid[::-1].hex())
                 
-                #check for coinbase tx
+                # check for coinbase tx
                 if prev_txid == b'\x00' * 32 and prev_index == b'\xff\xff\xff\xff':
                     is_coinbase = True
                 
                 # add input scripts to a list
-                inputs.append({ "script": script })
+                input_scripts.append({ "script": script })
 
-            #read number of outputs
+            # read number of outputs
             output_count = read_varint(f)
             output_values = []
             
-            #loop through outputs
+            # loop through outputs
             for _ in range(output_count):
                 value_sats = unpack("<Q", f.read(8))[0]
                 script_len = read_varint(f)
@@ -858,27 +872,28 @@ for block_hash, meta in found_blocks.items():
                     has_op_return = True
                 
                 # check for amount out of range
-                value_btc = value_sats / 1e8
+                value_btc = value_sats / 1e8 # why convert to a float?  slows ya down
                 if 1e-5 < value_btc < 1e5:
                     output_values.append(value_btc)
 
-            #if segqt, check witness data
+            # if segwit, check witness data
             if is_segwit:
-                for input_data in inputs:
+                for input_data in input_scripts:
                     stack_count = read_varint(f)
                     total_witness_len = 0
                     for _ in range(stack_count):
                         item_len = read_varint(f)
                         total_witness_len += item_len
                         f.read(item_len)
+                        # an unnecessary check since we're checking below and this doesn't prevent that check
                         if item_len > 500:
                             witness_exceeds = True
 
-                    # check it witness data larger than reasonable                    
+                    # check if witness data larger than reasonable                    
                     if total_witness_len > 500:
                         witness_exceeds = True
 
-            #calculate the TXID of this transaction and add it to list
+            # calculate the TXID of this transaction and add it to list
             f.read(4)
             end_tx = f.tell()
             f.seek(start_tx)
@@ -888,7 +903,7 @@ for block_hash, meta in found_blocks.items():
 
             #check for same day input re-use
             is_same_day_tx = False
-            for itxid in input_txids:
+            for itxid in prev_txids:
                 if itxid in todays_txids:
                     is_same_day_tx = True
                 
@@ -898,30 +913,31 @@ for block_hash, meta in found_blocks.items():
                 
                 # add all outputs to the bell curve
                 for amount in output_values:
-                    
-                    #find the right output amount bin to increment
+                    # find the right output amount bin to increment
                     amount_log = log10(amount)
-                    percent_in_range = (amount_log-first_bin_value)/range_bin_values
+                    percent_in_range = (amount_log - first_bin_value) / range_bin_values
                     bin_number_est = int(percent_in_range * number_of_bins)
                     
-                    #double check exact right bin (won't be less than)
+                    # double check exact right bin (won't be less than)
                     while output_bell_curve_bins[bin_number_est] <= amount:
                         bin_number_est += 1
                     bin_number = bin_number_est - 1
                     
-                    #add this output to the bell curve
-                    output_bell_curve_bin_counts[bin_number] += 1.0
+                    # add this output to the bell curve
+                    output_bell_curve_bin_counts[bin_number] += 1.0 # why a float for a count?
                     
-                    #add the output to this block's output list
-                    txs_to_add.append(amount)
+                    # add the output to this block's output list
+                    output_values_to_include.append(amount)
                     
-    #add the block's output list to the total output list
-    if len(txs_to_add)>0:
-        block_dec_inc = 1/len(txs_to_add)
-        bkh = block_nums_needed[block_num-1]
-        tm = block_times_needed[block_num-1]
-        for amt in txs_to_add:
+    # add the block's output list to the total output list
+    if len(output_values_to_include) > 0:
+        # block_dec_inc = 1 / len(output_values_to_include) # this isn't used anywhere
+        bkh = block_nums_needed[block_num - 1]
+        tm = block_times_needed[block_num - 1]
+        for amt in output_values_to_include:
+            # these guys are used in Part 10.2
             raw_outputs.append(amt)
+            # does it make sense to append the block height and time for each output?
             block_heights_dec.append(bkh)
             block_times_dec.append(tm)
                         
