@@ -264,6 +264,9 @@ if date_mode:
 
 ##############################################################################  
 # Part 5) Find the all blocks on the target day or in block height range requested
+# 
+# GOAL: To determine the start and end block #s for all target day blocks
+#
 ##############################################################################  
 print("Part 5...")
 # Now that we have the target day we need to find which blocks were mined on this day.
@@ -330,14 +333,14 @@ elif date_mode:
     #get new block estimate from the seconds difference using 144 blocks per day
     # print("20%..",end="",flush=True)
     seconds_difference = time_in_seconds - price_day_seconds
-    block_jump_estimate = round(144*float(seconds_difference)/float(seconds_in_a_day))
+    block_jump_estimate = round(144 * float(seconds_difference) / float(seconds_in_a_day))
     
     #iterate above process until it oscillates around the correct block
     last_estimate = 0
     last_last_estimate = 0
     
     # print("40%..",end="",flush=True)
-    while block_jump_estimate >6 and block_jump_estimate != last_last_estimate:
+    while block_jump_estimate > 6 and block_jump_estimate != last_last_estimate:
         
         #when we oscillate around the correct block, last_last_estimate = block_jump_estimate
         last_last_estimate = last_estimate
@@ -350,7 +353,7 @@ elif date_mode:
         time_in_seconds, hash_end = get_block_time(price_day_block_estimate) 
         n_rpc_calls += 2
         seconds_difference = time_in_seconds - price_day_seconds
-        block_jump_estimate = round(144*float(seconds_difference)/float(seconds_in_a_day))
+        block_jump_estimate = round(144 * float(seconds_difference) / float(seconds_in_a_day))
     
     # print("60%..",end="",flush=True)
     #the oscillation may be over multiple blocks so we add/subtract single blocks 
@@ -454,9 +457,24 @@ elif date_mode:
     print(f"    block_finish_num: {block_finish_num} {datetime.fromtimestamp(get_block_time(block_finish_num)[0], tz=timezone.utc)}")
 
 ##############################################################################  
-
+#
 # Part 6) Build a map of the binary block files      
-
+#
+#   GOAL: Get info from raw binary data files on all blocks needed.
+#
+#   * take a full inventory the block files (blk*.dat) -> block_files
+#   * estimate first block file to peruse -> start_blk_index
+#   * pare down block_files to exclude those priot to start_blk_index
+#   * cycle thru the block files:
+#       - read header, construct block hash, see if we need it
+#       - if we need it, add it to found_blocks dictionary w/ hash as key
+#       - values = filename block was found in
+#                  the byte position the block data starts within file
+#                  size of the block in bytes
+#                  timestamp of the block in epoch seconds
+#   * check if we found all the blocks we needed
+#   * error out if we didn't find all the blocks, carry on otherwise
+#
 ##############################################################################  
 sys.exit()
 print("Part 6...")
@@ -483,7 +501,7 @@ found_blocks = {}
 #     )
 
 def get_block_files(blocks_dir: str) -> List[str]:
-    # SSH connection details
+    # SSH connection detailkks
     host = os.getenv("UMBREL_HOST_IP")
     username = os.getenv("UMBREL_USER")
     password = os.getenv("UMBREL_PASSWORD")
@@ -525,7 +543,7 @@ block_depth_start = consensus_block - block_nums_needed[0]
 # last block of target day
 last_blk_file_num = int(block_files[-1][3:8])
 start_blk_index = last_blk_file_num - int(block_depth_start / blocks_per_file + 1) - 1
-end_blk_index_est = last_blk_file_num - int(int(block_depth_start / 128))
+end_blk_index_est = last_blk_file_num - int(int(block_depth_start / 128))  # why 128?  why int(int)? only used for status bar updates.
 
 # read a swath of block files looking for the block hashes needeed
 block_files = [f for f in block_files if int(f[3:8]) >= start_blk_index]
@@ -546,7 +564,7 @@ for block_file in block_files:
     # read the blk file
     with open(path, "rb") as f:
         
-        while True:
+        while True:  
             # read the headers to the block
             start = f.tell()
             magic = f.read(4)
@@ -554,7 +572,7 @@ for block_file in block_files:
                 break
             if magic != Mainnet_flag:
                 f.seek(start + 1)
-                continue
+                continue  # reset to top of while loop...seems a bad and unnecessary way to do this
             size_bytes = f.read(4)
             if len(size_bytes) < 4:
                 break
@@ -597,14 +615,20 @@ else:
     print("100% \t\t\t75% done",flush=True)
 
 
-
-
-
-
 ##############################################################################
 
 #  Part 7) Build the container to hold the output amounts bell curve
-
+#
+#  GOAL:  Create two lists of length 2400 (12 exponents, 200 intra-exponent bins):
+#           1. bins
+#           2. counts
+#
+#  The bins are logarithmicly spaced.
+#
+#  Appartently, these lists will contain a bell curve.
+# 
+#  Should probably use a better data structure than two separate lists.
+#
 ##############################################################################
 
 # We're almost ready to read in block data but first we must construct the 
@@ -626,13 +650,13 @@ last_bin_value = 6  #python -1 means last in list
 range_bin_values = last_bin_value - first_bin_value 
 
 # create a list of output_bell_curve_bins and add zero sats as the first bin
-output_bell_curve_bins = [0.0] #a decimal tells python the list will contain decimals
+output_bell_curve_bins = [0.0] # a decimal tells python the list will contain decimals
 
 # calculate btc amounts of 200 samples in every 10x from 100 sats (1e-6 btc) to 100k (1e5) btc
-for exponent in range(-6,6): #python range uses 'less than' for the big number 
+for exponent in range(-6, 6): # python range uses 'less than' for the big number 
     
     #add 200 bin_width increments in this 10x to the list
-    for b in range(0,200):
+    for b in range(0, 200):
         
         bin_value = 10 ** (exponent + b/200)
         output_bell_curve_bins.append(bin_value)
@@ -640,15 +664,8 @@ for exponent in range(-6,6): #python range uses 'less than' for the big number
 # Create a list the same size as the bell curve to keep the count of the bins
 number_of_bins = len(output_bell_curve_bins)
 output_bell_curve_bin_counts = []
-for n in range(0,number_of_bins):
+for n in range(0, number_of_bins):
     output_bell_curve_bin_counts.append(float(0.0))
-
-
-
-
-
-
-
 
 
 ##############################################################################
