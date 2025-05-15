@@ -466,18 +466,18 @@ elif date_mode:
 #
 #   GOAL: Get info from raw binary data files on all blocks needed.
 #
-#   * take a full inventory the block files (blk*.dat) -> block_files
-#   * estimate first block file to peruse -> start_blk_index
-#   * pare down block_files to exclude those priot to start_blk_index
-#   * cycle thru the block files:
+#   - take a full inventory the block files (blk*.dat) -> block_files
+#   - estimate first block file to peruse -> start_blk_index
+#   - pare down block_files to exclude those priot to start_blk_index
+#   - cycle thru the block files:
 #       - read header, construct block hash, see if we need it
 #       - if we need it, add it to found_blocks dictionary w/ hash as key
 #       - values = filename block was found in
 #                  the byte position the block data starts within file
 #                  size of the block in bytes
 #                  timestamp of the block in epoch seconds
-#   * check if we found all the blocks we needed
-#   * error out if we didn't find all the blocks, carry on otherwise
+#   - check if we found all the blocks we needed
+#   - error out if we didn't find all the blocks, carry on otherwise
 #
 ##############################################################################  
 sys.exit()
@@ -631,7 +631,7 @@ else:
 #
 #  Appartently, these lists will contain a bell curve.
 # 
-#  Should probably use a better data structure than two separate lists.
+#  Should probably use a better data structure rather than two separate lists.
 #
 ##############################################################################
 
@@ -676,7 +676,10 @@ for n in range(0, number_of_bins):
 #
 #  Part 8) Get all output amounts from all block on target day
 #
-#  GOAL: Read all target day blocks to construct the following lists:
+#  GOAL: Fill the sat bins with include-able outputs.
+# 
+#  Algorithm:
+#        Read all target day blocks to construct the following lists:
 #           - raw_outputs: list of all output values
 #           - block_heights_dec: list of all block heights
 #           - block_times_dec: list of all block times
@@ -935,7 +938,7 @@ for block_hash, meta in found_blocks.items():
         bkh = block_nums_needed[block_num - 1]
         tm = block_times_needed[block_num - 1]
         for amt in output_values_to_include:
-            # these guys are used in Part 10.2
+            # these guys are used in Part 12
             raw_outputs.append(amt)
             # does it make sense to append the block height and time for each output?
             block_heights_dec.append(bkh)
@@ -946,14 +949,24 @@ print("100% \t\t\t95% done",flush=True)
             
 
 ##############################################################################
-
+#
 #  Part 9) Remove non-usd related outputs from the bell curve
-
+#
+#  GOAL: Massage the bin counts:
+#          - zero out all counts below 1k sats
+#          - zero out all counts at or above 10 BTC
+#          - reaplace round bin counts with the average of its nearest neighbors
+#          - transform counts to a relative frequency
+#          - cap the relative frequency to 0.008
+#
 ##############################################################################
 
 # This section aims to remove non-usd denominated samples from the bell curve
-# of outputs. The two primary steps are to remove very large/small outputs
-# and then to remove round btc amounts. We don't set the round btc amounts
+# of outputs. The two primary steps are:
+#    1. remove very large/small outputs
+#    2. remove round btc amounts
+#
+# We don't set the round btc amounts
 # to zero because if the USD price of bitcoin is also round, then round
 # btc amounts will co-align with round usd amounts. There are many ways to deal
 # with this. One way we've found to work is to smooth over the round btc amounts
@@ -966,15 +979,19 @@ print("100% \t\t\t95% done",flush=True)
 print("\nFinding prices and rendering plot",flush=True)
 print("0%..",end="",flush=True)
 
-#remove outputs below 10k sat (increased from 1k sat in v6)
+# remove outputs below 10k sat (increased from 1k sat in v6)
+# THIS DOES NOT REMOVE SATS BELOW 10K...IT ONLY REMOVES SATS BELOW 1K.
+# need to up the range to 401 to remove below 10k.
+#
+# Plus, why fill these bins in Part 8 just to zero them out here?
 for n in range(0,201):
     output_bell_curve_bin_counts[n]=0
 
-#remove outputs above ten btc
+# remove outputs above ten btc
 for n in range(1601,len(output_bell_curve_bin_counts)):
     output_bell_curve_bin_counts[n]=0
 
-#create a list of round btc bin numbers
+# create a list of round btc bin numbers
 round_btc_bins = [
 201,  # 1k sats
 401,  # 10k 
@@ -996,18 +1013,21 @@ round_btc_bins = [
 1201  # 1 btc
 ]
 
-#smooth over the round btc amounts
+# smooth over the round btc amounts
+# Q: Why do we exclude the counts in the actual round bin?
+# A: Because round btc amounts most likely won't help us determine the USD price.
+#    (Only when the price is a round number will this help us.)
 for r in round_btc_bins:
-    amount_above = output_bell_curve_bin_counts[r+1]
-    amount_below = output_bell_curve_bin_counts[r-1]
-    output_bell_curve_bin_counts[r] = .5*(amount_above+amount_below)
+    amount_above = output_bell_curve_bin_counts[r + 1]
+    amount_below = output_bell_curve_bin_counts[r - 1]
+    output_bell_curve_bin_counts[r] = .5 * (amount_above + amount_below)
 
-#get the sum of the curve
+# get the sum of the curve
 curve_sum = 0.0
 for n in range(201,1601):
     curve_sum += output_bell_curve_bin_counts[n]
 
-#normalize the curve by dividing by it's sum and removing extreme values
+# normalize the curve by dividing by it's sum and removing extreme values
 for n in range(201,1601):
     output_bell_curve_bin_counts[n] /= curve_sum
     
@@ -1015,15 +1035,15 @@ for n in range(201,1601):
     if output_bell_curve_bin_counts[n] > 0.008:
         output_bell_curve_bin_counts[n] = 0.008
 
-#print update    
-print("20%..",end="",flush=True)
+# print update    
+print("20%..", end="", flush=True)
 
 
 
 
 ##############################################################################
 
-#  Part 8) Construct the USD price finder stencils
+#  Part 10) Construct the USD price finder stencils
 
 ##############################################################################
 
@@ -1113,7 +1133,7 @@ spike_stencil[801]= 0.000832244504868709  # $10000
 
 ##############################################################################
 
-#  Part 10) Estimate a rough price using the best fit stencil slide
+#  Part 11) Estimate a rough price using the best fit stencil slide
 
 ##############################################################################
 
@@ -1210,7 +1230,7 @@ print("40%..",end="",flush=True)
 
 ##############################################################################
 
-#  Part 10) Convert all outputs near round USD to the USD price used in the output
+#  Part 12) Convert all outputs near round USD to the USD price used in the output
 
 ##############################################################################
 
@@ -1294,7 +1314,7 @@ print("60%..",end="",flush=True)
 
 ##############################################################################
 
-#  Part 11) Find the central output and average deviation for plot window
+#  Part 13) Find the central output and average deviation for plot window
 
 ##############################################################################
 
@@ -1402,7 +1422,7 @@ if date_mode:
 
 ##############################################################################
 
-#  Part 12) Generate the chart in a webpage and serve it to the browser
+#  Part 14) Generate the chart in a webpage and serve it to the browser
 
 ##############################################################################
 
