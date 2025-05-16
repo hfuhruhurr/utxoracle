@@ -52,46 +52,44 @@ class BlockProcessor:
         block_height = block.block_height
         timestamp = block.block_header.timestamp
 
-        # Add block to block_buffer
-        self.block_buffer.append({
-            "block_id": block_hash,
-            "block": block_height,
-            "timestamp": timestamp,
-            "n_txs": block.n_txs,
-            "is_mainnet": block.is_mainnet
-        })
-
-        # Process transactions
-        for tx in block.txs:
-            txid = tx.txid
-            self.tx_buffer.append({
+        if block.is_mainnet:# Add block to block_buffer
+            self.block_buffer.append({
+                "block_id": block_hash,
                 "block": block_height,
-                "txid": txid,
-                "n_inputs": tx.n_inputs,
-                "n_outputs": tx.n_outputs,
-                "locktime": tx.locktime.hex(),
-                "is_coinbase": tx.is_coinbase,
-                "is_segwit": tx.is_segwit,
-                "witness_size": tx.witness_size
+                "timestamp": timestamp,
+                "n_txs": block.n_txs,
             })
 
-            for i, input in enumerate(tx.inputs):
-                self.input_buffer.append({
-                    "index": i,
+            # Process transactions
+            for tx in block.txs:
+                txid = tx.txid
+                self.tx_buffer.append({
+                    "block": block_height,
                     "txid": txid,
-                    "prev_txid": input.utxo_txid.hex(),
-                    "prev_vout": input.utxo_vout,
-                    "script_size": input.script_size,
+                    "n_inputs": tx.n_inputs,
+                    "n_outputs": tx.n_outputs,
+                    "locktime": tx.locktime.hex(),
+                    "is_coinbase": tx.is_coinbase,
+                    "witness_size": tx.witness_size
                 })
 
-            for i, output in enumerate(tx.outputs):
-                self.output_buffer.append({
-                    "index": i,
-                    "txid": txid,
-                    "amount": output.amount,
-                    "script_size": output.script_size,
-                    "is_op_return": output.script[0] == 0x6a
-                })
+                for i, input in enumerate(tx.inputs):
+                    self.input_buffer.append({
+                        "index": i,
+                        "txid": txid,
+                        "prev_txid": input.utxo_txid.hex(),
+                        "prev_vout": input.utxo_vout,
+                        "script_size": input.script_size,
+                    })
+
+                for i, output in enumerate(tx.outputs):
+                    self.output_buffer.append({
+                        "index": i,
+                        "txid": txid,
+                        "amount": output.amount,
+                        "script_size": output.script_size,
+                        "is_op_return": output.script[0] == 0x6a
+                    })
 
         # Write buffers to Parquet if chunk_size is reached
         for buffer, file_path in [
