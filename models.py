@@ -82,6 +82,9 @@ class Transaction:
     locktime: bytes
     txid: bytes
     preimage: str
+    is_coinbase: bool
+    is_segwit: bool
+    witness_size: int
 
 @dataclass
 class RawBlock:
@@ -218,7 +221,6 @@ class RawBlock:
     def parse_txs(tx_data: bytes) -> tuple[List[Transaction], int]:
         """Parse the transaction data into a list of Transaction objects."""
         transactions = []
-        coinbase_tx = True
         pos = 0
         while pos < len(tx_data):
             # Read transaction version
@@ -264,9 +266,9 @@ class RawBlock:
             inputs = []
             for _ in range(n_inputs):
                 # Read previous outpoint txid (32 bytes)
-                utox_txid = tx_data[pos:pos+32]
+                utxo_txid = tx_data[pos:pos+32]
                 pos += 32
-                inputs_bytes += utox_txid
+                inputs_bytes += utxo_txid
 
                 # Read previous outpoint vout (4 bytes)
                 utxo_vout_bytes = tx_data[pos:pos+4]
@@ -274,13 +276,15 @@ class RawBlock:
                 pos += 4
                 inputs_bytes += utxo_vout_bytes
 
+                is_coinbase = (utxo_txid == b'\x00' * 32) and (utxo_vout == 0xFFFFFFFF)
+
                 # Read script size (compact size integer)
                 # script size can be 0 -> non-legacy locking scripts 
                 script_size, pos, script_size_bytes = RawBlock.get_compact_size(tx_data, pos)
                 # script size limits from https://developer.bitcoin.org/reference/transactions.html
-                if coinbase_tx and script_size > 100:
+                if is_coinbase and script_size > 100:
                     raise ValueError(f"Coinbase script size must be <= 100 bytes, got {script_size:,} bytes")
-                if not coinbase_tx and script_size > 10_000:
+                if not is_coinbase and script_size > 10_000:
                     raise ValueError(f"Input script size must be <= 10,000 bytes, got {script_size:,} bytes")
                 inputs_bytes += script_size_bytes
 
@@ -288,7 +292,7 @@ class RawBlock:
                 script = tx_data[pos:pos+script_size] if script_size > 0 else b''
                 pos += script_size
                 inputs_bytes += script
-                if coinbase_tx:
+                if is_coinbase:
                     block_height_size = int.from_bytes(script[0:1])
                     block_height = int.from_bytes(script[1:block_height_size+1], byteorder='little')
                     
@@ -298,7 +302,7 @@ class RawBlock:
                 inputs_bytes += sequence
 
                 # Create input object
-                inputs.append(Input(utox_txid, utxo_vout, script_size, script, sequence))
+                inputs.append(Input(utxo_txid, utxo_vout, script_size, script, sequence))
             if len(inputs_bytes) < 41:
                 raise ValueError(f"Per BIP-144, expected at least 41 bytes for inputs, got {len(inputs_bytes)} bytes")
             
@@ -383,8 +387,6 @@ class RawBlock:
                 raise ValueError(f"Per BIP-144, expected 4 bytes for locktime, got {len(lock_time)} bytes")
             pos += 4
 
-            coinbase_tx = False
-
             transactions.append(Transaction(
                 version=version,
                 version_bytes=version_bytes,
@@ -399,7 +401,10 @@ class RawBlock:
                 witness=witness,
                 locktime=lock_time,
                 txid=tx_hash(version_bytes, inputs_bytes, outputs_bytes, lock_time)[0],
-                preimage=tx_hash(version_bytes, inputs_bytes, outputs_bytes, lock_time)[1]
+                preimage=tx_hash(version_bytes, inputs_bytes, outputs_bytes, lock_time)[1],
+                is_coinbase=is_coinbase,
+                is_segwit=witness_flag,
+                witness_size=len(witness_bytes)
             ))
 
         return transactions, block_height
