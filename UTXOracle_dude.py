@@ -789,7 +789,7 @@ def compute_txid(raw_tx_bytes: bytes) -> bytes:
     return hashlib.sha256(hashlib.sha256(stripped_tx).digest()).digest()[::-1]
 
 # initialize output lists and variables
-todays_txids = set()
+todays_txids = set()  # "today" works if in date_mode but not for recent_block_mode
 raw_outputs = []
 block_heights_dec = []
 block_times_dec = []
@@ -881,7 +881,7 @@ for block_hash, meta in found_blocks.items():
 
             # if segwit, check witness data
             if is_segwit:
-                for input_data in input_scripts:
+                for _ in input_scripts:  # number of inputs would be clearer
                     stack_count = read_varint(f)
                     total_witness_len = 0
                     for _ in range(stack_count):
