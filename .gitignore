@@ -11,3 +11,4 @@ wheels/
 
 blocks/
 .DS_Store
+__marimo__/
