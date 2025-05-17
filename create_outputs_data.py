@@ -4,26 +4,23 @@ from typing import List, Dict
 import logging
 from models import RawBlock
 
-BLOCKS_DIR = 'blocks'
-BLOCK_FILE_TO_READ = 'blk04930.dat'
-block_file_path = os.path.join(BLOCKS_DIR, BLOCK_FILE_TO_READ)
 
 def process_block_file(file_path: str):
     # Read the block file        
     b = 0  # index of block to read
     pos = 0  # start position of block in file to read raw block data
-    print(f"Reading binary block file {BLOCK_FILE_TO_READ}...")
-    print("-" * 80)
+    logger.info(f"Reading binary block file {file_path}...")
+    logger.info("-" * 80)
 
    # Initialize the processor
     processor = BlockProcessor(chunk_size=1000, output_dir="dude_data")
     
     with open(f'{file_path}', 'rb') as f:
         file_len = len(f.read())
-        print(f"len {file_path} = {file_len:,} bytes")
+        logger.info(f"len {file_path} = {file_len:,} bytes")
         while pos < file_len:
             b += 1
-            print(f"  Reading block #{b:3} from byte {pos:12,}...")
+            logger.info(f"  Reading block #{b:3} from byte {pos:12,}...")
             raw_block, new_pos = RawBlock.parse(f, pos)
             processor.process_raw_block(raw_block)
             pos = new_pos
@@ -131,9 +128,9 @@ if __name__ == '__main__':
     # Set up logging
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
     logger = logging.getLogger(__name__)
-
-    blocks = []
-    txs = []
-    inputs = []
-    outputs = []
-    process_block_file(block_file_path)
+    
+    BLOCKS_DIR = 'blocks'
+    block_files_to_read = ['blk04930.dat', 'blk04931.dat']
+    for file in block_files_to_read:
+        block_file_path = os.path.join(BLOCKS_DIR, file)
+        process_block_file(block_file_path)
