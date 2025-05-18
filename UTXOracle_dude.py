@@ -1152,28 +1152,28 @@ spike_weight      = 1
 
 #establish the center slide such that if zero slide then 0.001 btc is $100 ($100k price)
 center_p001 = 601   # 601 is where 0.001 btc is in the output bell curve
-left_p001   = center_p001 - int((len(spike_stencil) +1)/2)
-right_p001  = center_p001 + int((len(spike_stencil) +1)/2)
+left_p001   = center_p001 - int((len(spike_stencil) + 1) / 2)
+right_p001  = center_p001 + int((len(spike_stencil) + 1) / 2)
 
 #upper and lower limits for sliding the stencil
 min_slide = -141   # $500k
 max_slide =  201   # $5k
     
 #slide the stencil and calculate slide score
-for slide in range(min_slide,max_slide):
+for slide in range(min_slide, max_slide):
     
     #shift the bell curve by the slide
     shifted_curve = output_bell_curve_bin_counts[left_p001+slide:right_p001+slide]
     
     #score the smoothslide by multiplying the curve by the stencil
     slide_score_smooth = 0.0
-    for n in range(0,len(smooth_stencil)):
-        slide_score_smooth += shifted_curve[n]*smooth_stencil[n]
+    for n in range(0, len(smooth_stencil)):
+        slide_score_smooth += shifted_curve[n] * smooth_stencil[n]
     
     #score the spiky slide by multiplying the curve by the stencil
     slide_score = 0.0
-    for n in range(0,len(spike_stencil)):
-        slide_score += shifted_curve[n]*spike_stencil[n]
+    for n in range(0, len(spike_stencil)):
+        slide_score += shifted_curve[n] * spike_stencil[n]
     
     # add the spike and smooth slide scores, neglect smooth slide over wrong regions
     if slide < 150:
