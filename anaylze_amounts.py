@@ -10,7 +10,8 @@ def _():
     import polars as pl
     import matplotlib.pyplot as plt
     import numpy as np
-    return mo, np, pl, plt
+    import altair as alt
+    return alt, mo, np, pl, plt
 
 
 @app.cell
@@ -104,6 +105,62 @@ def _(
     print(f"min_sats: {min_amount:,}, max_sats: {max_amount:,}")
     print(f"# included amounts: {len(filtered):,}")
     return bins, filtered
+
+
+@app.cell
+def _(np):
+    def construct_bins_og(n_bins_per_exponent=200, min_exp=-6, max_exp=6):
+        bins = [0.0]
+        for exponent in range (min_exp, max_exp):
+            for b in range(0, n_bins_per_exponent):
+                bin = 10 ** (exponent + b / n_bins_per_exponent)
+                bins.append(bin)
+        return bins
+
+    def construct_bins_dude(n_bins_per_exponent=200, min_exp=-6, max_exp=6):
+        bins = [0.0]
+    
+        return bins + list(np.logspace(
+            min_exp,
+            max_exp,
+            num=n_bins_per_exponent * (max_exp - min_exp),
+            endpoint=False
+        ))
+    return construct_bins_dude, construct_bins_og
+
+
+@app.function
+def display_diff(a, b):
+    for i in range(len(a)):
+        print(f"{i:04}:  {a[i]:17,.7f}  {b[i]:17,.7f}  {a[i] - b[i]:17,.7f}")
+
+
+@app.cell
+def _(alt, construct_bins_dude, construct_bins_og, pl):
+    def visually_debug_bin_construction():
+        steve = construct_bins_og(10, 2, 4)
+        dude = construct_bins_dude(10, 2, 4)
+
+        df = pl.DataFrame([steve, dude]).rename({'column_0': 'steve', 'column_1': 'dude'})
+        df_long = df.unpivot(variable_name="column", value_name="value")
+
+        return alt.Chart(df_long).mark_tick().encode(
+            x=alt.X("value:Q", title="Value"),  # Quantitative axis for values
+            y=alt.Y("column:N", title="Column"),  # Nominal axis for column names
+            color=alt.Color("column:N", title="Column", scale=alt.Scale(range=["#1f77b4", "#ff7f0e"]))  # Distinct colors
+        ).properties(
+            title="Tick Marks for Column Values",
+            width=600,
+            height=100
+        )
+
+    return (visually_debug_bin_construction,)
+
+
+@app.cell
+def _(visually_debug_bin_construction):
+    visually_debug_bin_construction().show()
+    return
 
 
 @app.cell(hide_code=True)

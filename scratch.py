@@ -19,7 +19,9 @@ def part_7_build_curve_containter_og():
     # Let's see what we've got:
     print("Let's see what we've got:")
     for i in range(number_of_bins):
-        if i % 100 == 1 or i % 200 == 0:
+        # if i % 100 == 1 or i % 200 == 0:
+        start = 2390
+        if start <= i <= start + 30:
         # if i % 20 == 1 and i <= 201:
             print(f"    i: {i:04}    bin: {round(output_bell_curve_bins[i] * 1e8):19,}    counts: {output_bell_curve_bin_counts[i]}")
     print()
