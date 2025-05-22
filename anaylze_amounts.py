@@ -231,12 +231,12 @@ def _(pl):
         df = df.with_columns(
             pl.col('sat_bin').diff(1).alias('sat_bin_width')
         )
-    
+
         # zero out counts in bins <= 200 and bins >= 1601
         df = df.filter(
             pl.col('index').is_in(range(201,1601)),
         )
-    
+
         # for round bins, replace actual count with average of nearest neighbors
         df = df.with_columns(
             pl.when(pl.col("is_round"))
@@ -273,7 +273,7 @@ def _(plt):
         x = df['sat_bin']
         y = df['rel_freq']
         widths = df['sat_bin_width']
-    
+
         plt.bar(x, y, width=widths)
         plt.xscale('log')
         plt.axvspan(1e3, 1e5, alpha=0.3, color='orange', label='Stencil Overlay')
@@ -320,7 +320,7 @@ def construct_stencils():
     spike_stencil = []
     for n in range(0, num_elements):
         spike_stencil.append(0.0)
-    
+
     #round usd bin location   #popularity    #usd amount  
     spike_stencil[40] = 0.001300198324984352  # $1
     spike_stencil[141]= 0.001676746949820743  # $5
@@ -358,6 +358,28 @@ def construct_stencils():
 @app.cell
 def _(pl):
     pl.DataFrame(construct_stencils()[0])
+    return
+
+
+@app.cell
+def _(plt):
+    def plot_stencils(smooth_stencil, spike_stencil):
+        # Plotting
+        plt.figure(figsize=(10, 6))
+        plt.plot(range(len(smooth_stencil)), smooth_stencil, label='Smooth Stencil', color='blue', alpha=0.6)
+        plt.stem(range(len(spike_stencil)), spike_stencil, label='Spike Stencil', linefmt='r-', markerfmt='ro', basefmt=' ')
+        plt.xlabel('Index')
+        plt.ylabel('Stencil Value')
+        plt.title('Smooth and Spike Stencils')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.show()
+    return (plot_stencils,)
+
+
+@app.cell
+def _(plot_stencils):
+    plot_stencils(construct_stencils()[0], construct_stencils()[1])
     return
 
 

@@ -1165,19 +1165,21 @@ for slide in range(min_slide, max_slide):
     #shift the bell curve by the slide
     shifted_curve = output_bell_curve_bin_counts[left_p001+slide:right_p001+slide]
     
-    #score the smoothslide by multiplying the curve by the stencil
-    slide_score_smooth = 0.0
-    for n in range(0, len(smooth_stencil)):
-        slide_score_smooth += shifted_curve[n] * smooth_stencil[n]
-    
     #score the spiky slide by multiplying the curve by the stencil
-    slide_score = 0.0
+    spike_score = 0.0
     for n in range(0, len(spike_stencil)):
-        slide_score += shifted_curve[n] * spike_stencil[n]
+        spike_score += shifted_curve[n] * spike_stencil[n]
     
     # add the spike and smooth slide scores, neglect smooth slide over wrong regions
     if slide < 150:
-        slide_score = slide_score + slide_score_smooth*.65
+        #score the smoothslide by multiplying the curve by the stencil
+        smooth_score = 0.0
+        for n in range(0, len(smooth_stencil)):
+            smooth_score += shifted_curve[n] * smooth_stencil[n]
+ 
+        slide_score = spike_score + smooth_score * 0.65
+    else:
+        slide_score = spike_score
         
     # see if this score is the best so far
     if slide_score > best_slide_score:
@@ -1241,29 +1243,29 @@ print("40%..",end="",flush=True)
 # list of round USD prices to collect outputs from
 usds = [5,10,15,20,25,30,40,50,100,150,200,300,500,1000]
 
-# pct of price increase of decrease to include
+# pct of price increase or decrease to include
 pct_range_wide = .25
 
 # filter for micro round satoshi amounts
 micro_remove_list = []
 i = .00005000
-while i<.0001:
+while i < .0001:
     micro_remove_list.append(i)
     i += .00001
 i = .0001
-while i<.001:
+while i < .001:
     micro_remove_list.append(i)
     i += .00001
 i = .001
-while i<.01:
+while i < .01:
     micro_remove_list.append(i)
     i += .0001
 i = .01
-while i<.1:
+while i < .1:
     micro_remove_list.append(i)
     i += .001
 i = .1
-while i<1:
+while i < 1:
     micro_remove_list.append(i)
     i += .01
 pct_micro_remove = .0001
@@ -1273,19 +1275,19 @@ output_prices = []
 output_blocks = []
 output_times = []
 
-#loop through all outputs
-for i in range (0,len(raw_outputs)):
+# loop through all outputs
+for i in range (0, len(raw_outputs)):
     
-    #get the amount, height and time of the next output
+    # get the amount, height and time of the next output
     n = raw_outputs[i]
     b = block_heights_dec[i]
     t = block_times_dec[i]
     
-    #loop throughll usd amounts possible
+    # loop through all usd amounts possible
     for usd in usds:
         
-        #calculate the upper and lower bounds for the USD range
-        avbtc = usd/rough_price_estimate
+        # calculate the upper and lower bounds for the USD range
+        avbtc = usd / rough_price_estimate
         btc_up = avbtc + pct_range_wide * avbtc 
         btc_dn = avbtc - pct_range_wide * avbtc
     
