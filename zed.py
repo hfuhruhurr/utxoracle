@@ -10,7 +10,7 @@ from typing import List, Tuple
 
 
 def part_1a_process_args() -> Tuple[str, str]:
-    print("Processing arguments...")
+    print("Starting Part 1a, processing arguments...")
     date_mode = True
     date_entered = ""
 
@@ -50,15 +50,16 @@ def part_1a_process_args() -> Tuple[str, str]:
 
     run_mode = "date" if date_mode else "block"
 
-    print("Done processing arguments.")
+    print("  Returning:")
+    print(f"    run_mode ({run_mode}) and date_entered ({date_entered})...")
     return run_mode, date_entered
 
 
 def part_1b_initializing() -> Tuple[str, str, List[str]]:
-    print("Initializing...")
+    print("Starting Part 1b, initializing...")
 
     # print the current version and disable warnings
-    print("UTXOracle version 9.0")
+    print("  UTXOracle version 9.0")
     warnings.filterwarnings("ignore", category=DeprecationWarning)
 
     # set platform dependent data paths and clear terminal
@@ -75,9 +76,14 @@ def part_1b_initializing() -> Tuple[str, str, List[str]]:
         # os.system('clear')
 
     if True:  # True whilst testing
-        print("Done initializing.")
+        blocks_dir = os.path.join(data_dir, "blocks")
         bitcoin_cli_options = []
-        return data_dir, os.path.join(data_dir, "blocks"), bitcoin_cli_options
+        print("  Returning:")
+        print(f"    data_dir     :{data_dir}")
+        print(f"    blocks_dir   :{blocks_dir}")
+        print(f"    bcli_options :{bitcoin_cli_options}")
+        bitcoin_cli_options = []
+        return data_dir, blocks_dir, bitcoin_cli_options
     else:
         # initialize variables for blocks and dates
         # block_start_num = 0
@@ -131,10 +137,12 @@ def part_1b_initializing() -> Tuple[str, str, List[str]]:
 
 
 def part_2_ask_node(bitcoin_cli_options: List[str], command) -> bytes:
-    print("Asking node for data...")
+    print("Starting Part 2, asking node for data...")
     # full_command = ["bitcoin-cli"] + bitcoin_cli_options + command
 
-    print("Done asking node.")
+    print("  Returning:")
+    print(f"    subprocess output byte string")
+
     # try:
     #     rv = subprocess.check_output(full_command)
     #     #subprocess.run('echo "\\033]0;UTXOracle\\007"', shell=True)
@@ -150,7 +158,7 @@ def part_2_ask_node(bitcoin_cli_options: List[str], command) -> bytes:
 
 
 def part_3_get_consensus_block_timestamp() -> datetime:
-    print("Getting the timestamp of the consensus block...")
+    print("Starting Part 3, getting the timestamp of the consensus block...")
     # # Doing a lot of shit when you really only need the timestamp
     # # of the consensus block
     # block_count = int(part_2_ask_node(["getblockcount"]))
@@ -187,229 +195,242 @@ def part_3_get_consensus_block_timestamp() -> datetime:
     # # print completion update
     # print("5% done", flush=True)
 
-    print("Done getting the timestamp.")
     consensus_block_timestamp = datetime.datetime(
         2025, 9, 3, 12, 24, 0, tzinfo=datetime.UTC
     )
+    print("  Returning:")
+    print(f"    Timestamp of consensus block: {consensus_block_timestamp}.")
 
     return consensus_block_timestamp
 
 
-def remaining_parts():
-    ###############################################################################
-
-    # Part 4) Check that the date entered is an acceptable date
-
-    ###############################################################################
-
-    # In this section make sure that the date requested is in the
-    # acceptable range for this version. This section is not used if user
-    # specificed block numbers instead of a date
-
-    if date_mode:
-        # run latest day if hit enter
-        if date_entered == "":
-            datetime_entered = latest_utc_midnight + timedelta(days=-1)
-
-        # user entered a specific date
-        else:
-            # check to see if this is a good date
-            try:
-                year = int(date_entered.split("/")[0])
-                month = int(date_entered.split("/")[1])
-                day = int(date_entered.split("/")[2])
-
-                # make sure this date is less than the max date
-                datetime_entered = datetime(
-                    year, month, day, 0, 0, 0, tzinfo=timezone.utc
-                )
-                if datetime_entered.timestamp() >= latest_utc_midnight.timestamp():
-                    print(
-                        "\nDate is after the latest avaiable. We need 6 blocks after UTC midnight."
-                    )
-                    print("Run UTXOracle.py -rb for the most recent blocks")
-
-                    sys.exit()
-
-                # make sure this date is after the min date
-                dec_15_2023 = datetime(2023, 12, 15, 0, 0, 0, tzinfo=timezone.utc)
-                if datetime_entered.timestamp() < dec_15_2023.timestamp():
-                    print("\nThe date entered is before 2023-12-15, please try again")
-                    sys.exit()
-
-            except:
-                print(
-                    "\nError interpreting date. Please try again. Make sure format is YYYY/MM/DD"
-                )
-                sys.exit()
-
-        # get the seconds and printable date string of date entered
-        price_day_seconds = int(datetime_entered.timestamp())
-        price_day_date_utc = datetime_entered.strftime("%b %d, %Y")
-        price_date_dash = datetime_entered.strftime("%Y-%m-%d")
-
-    ##############################################################################
-
-    # Part 5) Find the all blocks on the target day or in block height range requested
-
-    ##############################################################################
-
-    # Now that we have the target day we need to find which blocks were mined on this day.
-    # This would be easy if bitcoin blocks were organized by time
-    # instead of by block height. However there's no way to ask bitcoin for a block at a
-    # specific time. Instead one must ask for a block, look at it's time, then estimate
-    # the number of blocks to jump for the next guess. So we use this
-    # guess and check method to find all blocks on the target day.
-
-    # define a shortcut for getting the block time from the block number
-    def get_block_time(height):
-        block_hash_b = Ask_Node(["getblockhash", str(height)])
-        block_header_b = Ask_Node(["getblockheader", block_hash_b[:64], "true"])
-        block_header = json.loads(block_header_b)
-        return (block_header["time"], block_hash_b[:64].decode())
-
-    # define a shortcut for getting the day of money from a time in seconds
-    def get_day_of_month(time_in_seconds):
-        time_datetime = datetime.fromtimestamp(time_in_seconds, tz=timezone.utc)
-        return int(time_datetime.strftime("%d"))
-
-    # if block mode add the blocks and hashes to a list
-    if block_mode:
-        print("\nFinding the last 144 blocks", flush=True)
-
-        # get the last block number of the day
-        block_finish_num = block_count
-        block_start_num = block_finish_num - 144
-
-        # append needed block nums and hashes needed
-        block_num = block_start_num
-        time_in_seconds, hash_end = get_block_time(block_start_num)
-        print_every = 0
-        while block_num < block_finish_num:
-            # print update
-            if (
-                block_num - block_start_num
-            ) / 144 * 100 > print_every and print_every < 100:
-                print(str(print_every) + "%..", end="", flush=True)
-                print_every += 20
-            block_nums_needed.append(block_num)
-            block_hashes_needed.append(hash_end)
-            block_times_needed.append(time_in_seconds)
-            block_num += 1
-            time_in_seconds, hash_end = get_block_time(block_num)
-
-        print("100%\t\t\t25% done", flush=True)
-
-    # if date mode search for all the blocks on this day
-    elif date_mode:
+def part_4_set_target_date(date_mode, date_entered) -> datetime:
+    print("Starting Part 4...")
+    print(f"  Date entered: {date_entered}")
+    print(f"  Date mode: {date_mode}")
+    if date_mode == "date":
+        print("  Date mode is enabled...set target date to most recent price date")
+    else:
         print(
-            "\nFinding all blocks on " + datetime_entered.strftime("%b %d, %Y"),
-            flush=True,
+            "  Date mode is disabled...check the entered date is sufficiently in the past."
         )
-        print("0%..", end="", flush=True)
-        # first estimate of the block height of the price day
-        seconds_since_price_day = latest_time_in_seconds - price_day_seconds
-        blocks_ago_estimate = round(
-            144 * float(seconds_since_price_day) / float(seconds_in_a_day)
+        print(
+            "                       ...check the entered date is sufficiently recent."
         )
-        price_day_block_estimate = block_count_consensus - blocks_ago_estimate
+    print("  Returning:")
+    target_date = datetime.datetime(2025, 5, 22, tzinfo=datetime.UTC)
+    print(f"    Target date: {target_date}.")
 
-        # check the time of the price day block estimate
-        time_in_seconds, hash_end = get_block_time(price_day_block_estimate)
+    ###############################################################################
+    # Part 4) Check that the date entered is an acceptable date
+    ###############################################################################
 
-        # get new block estimate from the seconds difference using 144 blocks per day
-        print("20%..", end="", flush=True)
-        seconds_difference = time_in_seconds - price_day_seconds
-        block_jump_estimate = round(
-            144 * float(seconds_difference) / float(seconds_in_a_day)
-        )
+    # if date_mode:
+    #     # run latest day if hit enter
+    #     if date_entered == "":
+    #         datetime_entered = latest_utc_midnight + timedelta(days=-1)
 
-        # iterate above process until it oscillates around the correct block
-        last_estimate = 0
-        last_last_estimate = 0
+    #     # user entered a specific date
+    #     else:
+    #         # check to see if this is a good date
+    #         try:
+    #             year = int(date_entered.split("/")[0])
+    #             month = int(date_entered.split("/")[1])
+    #             day = int(date_entered.split("/")[2])
 
-        print("40%..", end="", flush=True)
-        while block_jump_estimate > 6 and block_jump_estimate != last_last_estimate:
-            # when we oscillate around the correct block, last_last_estimate = block_jump_estimate
-            last_last_estimate = last_estimate
-            last_estimate = block_jump_estimate
+    #             # make sure this date is less than the max date
+    #             datetime_entered = datetime(
+    #                 year, month, day, 0, 0, 0, tzinfo=timezone.utc
+    #             )
+    #             if datetime_entered.timestamp() >= latest_utc_midnight.timestamp():
+    #                 print(
+    #                     "\nDate is after the latest avaiable. We need 6 blocks after UTC midnight."
+    #                 )
+    #                 print("Run UTXOracle.py -rb for the most recent blocks")
 
-            # get block header or new estimate
-            price_day_block_estimate = price_day_block_estimate - block_jump_estimate
+    #                 sys.exit()
 
-            # check time of new block and get new block jump estimate
-            time_in_seconds, hash_end = get_block_time(price_day_block_estimate)
-            seconds_difference = time_in_seconds - price_day_seconds
-            block_jump_estimate = round(
-                144 * float(seconds_difference) / float(seconds_in_a_day)
-            )
+    #             # make sure this date is after the min date
+    #             dec_15_2023 = datetime(2023, 12, 15, 0, 0, 0, tzinfo=timezone.utc)
+    #             if datetime_entered.timestamp() < dec_15_2023.timestamp():
+    #                 print("\nThe date entered is before 2023-12-15, please try again")
+    #                 sys.exit()
 
-        print("60%..", end="", flush=True)
-        # the oscillation may be over multiple blocks so we add/subtract single blocks
-        # to ensure we have exactly the first block of the target day
-        if time_in_seconds > price_day_seconds:
-            # if the estimate was after price day look at earlier blocks
-            while time_in_seconds > price_day_seconds:
-                # decrement the block by one, read new block header, check time
-                price_day_block_estimate = price_day_block_estimate - 1
-                time_in_seconds, hash_end = get_block_time(price_day_block_estimate)
+    #         except:
+    #             print(
+    #                 "\nError interpreting date. Please try again. Make sure format is YYYY/MM/DD"
+    #             )
+    #             sys.exit()
 
-            # the guess is now perfectly the first block before midnight
-            price_day_block_estimate = price_day_block_estimate + 1
+    #     # get the seconds and printable date string of date entered
+    #     price_day_seconds = int(datetime_entered.timestamp())
+    #     price_day_date_utc = datetime_entered.strftime("%b %d, %Y")
+    #     price_date_dash = datetime_entered.strftime("%Y-%m-%d")
 
-        # if the estimate was before price day look for later blocks
-        elif time_in_seconds < price_day_seconds:
-            while time_in_seconds < price_day_seconds:
-                # increment the block by one, read new block header, check time
-                price_day_block_estimate = price_day_block_estimate + 1
-                time_in_seconds, hash_end = get_block_time(price_day_block_estimate)
+    return target_date
 
-        print("80%..", end="", flush=True)
-        # assign the estimate as the price day block since it is correct now
-        price_day_block = price_day_block_estimate
 
-        # get the day of the month
-        time_in_seconds, hash_start = get_block_time(price_day_block)
-        day1 = get_day_of_month(time_in_seconds)
+def get_block_time(height):
+    block_hash_b = part_2_ask_node(["getblockhash", str(height)])
+    block_header_b = part_2_ask_node(["getblockheader", block_hash_b[:64], "true"])
+    block_header = json.loads(block_header_b)
 
-        # get the last block number of the day
-        price_day_block_end = price_day_block
-        time_in_seconds, hash_end = get_block_time(price_day_block_end)
-        day2 = get_day_of_month(time_in_seconds)
+    return (block_header["time"], block_hash_b[:64].decode())
 
-        print("100%\t\t\t25% done", flush=True)
-        print("\nDetermining the correct order of blocks", flush=True)
 
-        # load block nums and hashes needed
-        block_num = 0
-        print_next = 0
-        while day1 == day2:
-            # print progress update
-            block_num += 1
-            if block_num / 144 * 100 > print_next:
-                if print_next < 100:
-                    print(str(print_next) + "%..", end="", flush=True)
-                    print_next += 20
+def part_5_get_target_blocks(run_mode: str, target_day: datetime) -> Tuple[int, int]:
+    print("Starting Part 5...")
+    print(f"  Run mode: {run_mode}")
+    print(f"  Target day: {target_day}")
+    if run_mode == "date":
+        print("  Date mode is enabled...get all block on target date")
+    else:
+        print("  Block mode is enabled...get the last 144 blocks")
+    print("  Returning start and end block numbers for target...")
 
-            # append needed block
-            block_nums_needed.append(price_day_block_end)
-            block_hashes_needed.append(hash_end)
-            block_times_needed.append(time_in_seconds)
-            price_day_block_end += 1  # assume 30+ blocks this day
-            time_in_seconds, hash_end = get_block_time(price_day_block_end)
-            day2 = get_day_of_month(time_in_seconds)
+    target_block_start = 88027
+    target_block_end = 88171
 
-        # complete print update status
-        while print_next < 100:
-            print(str(print_next) + "%..", end="", flush=True)
-            print_next += 20
+    # # if block mode add the blocks and hashes to a list
+    # if block_mode:
+    #     print("\nFinding the last 144 blocks", flush=True)
 
-        # set start and end block numbers
-        block_start_num = price_day_block
-        block_finish_num = price_day_block_end
+    #     # get the last block number of the day
+    #     block_finish_num = block_count
+    #     block_start_num = block_finish_num - 144
 
-        print("100%\t\t\t50% done", flush=True)
+    #     # append needed block nums and hashes needed
+    #     block_num = block_start_num
+    #     time_in_seconds, hash_end = get_block_time(block_start_num)
+    #     print_every = 0
+    #     while block_num < block_finish_num:
+    #         # print update
+    #         if (
+    #             block_num - block_start_num
+    #         ) / 144 * 100 > print_every and print_every < 100:
+    #             print(str(print_every) + "%..", end="", flush=True)
+    #             print_every += 20
+    #         block_nums_needed.append(block_num)
+    #         block_hashes_needed.append(hash_end)
+    #         block_times_needed.append(time_in_seconds)
+    #         block_num += 1
+    #         time_in_seconds, hash_end = get_block_time(block_num)
 
+    #     print("100%\t\t\t25% done", flush=True)
+
+    # # if date mode search for all the blocks on this day
+    # elif date_mode:
+    #     print(
+    #         "\nFinding all blocks on " + datetime_entered.strftime("%b %d, %Y"),
+    #         flush=True,
+    #     )
+    #     print("0%..", end="", flush=True)
+    #     # first estimate of the block height of the price day
+    #     seconds_since_price_day = latest_time_in_seconds - price_day_seconds
+    #     blocks_ago_estimate = round(
+    #         144 * float(seconds_since_price_day) / float(seconds_in_a_day)
+    #     )
+    #     price_day_block_estimate = block_count_consensus - blocks_ago_estimate
+
+    #     # check the time of the price day block estimate
+    #     time_in_seconds, hash_end = get_block_time(price_day_block_estimate)
+
+    #     # get new block estimate from the seconds difference using 144 blocks per day
+    #     print("20%..", end="", flush=True)
+    #     seconds_difference = time_in_seconds - price_day_seconds
+    #     block_jump_estimate = round(
+    #         144 * float(seconds_difference) / float(seconds_in_a_day)
+    #     )
+
+    #     # iterate above process until it oscillates around the correct block
+    #     last_estimate = 0
+    #     last_last_estimate = 0
+
+    #     print("40%..", end="", flush=True)
+    #     while block_jump_estimate > 6 and block_jump_estimate != last_last_estimate:
+    #         # when we oscillate around the correct block, last_last_estimate = block_jump_estimate
+    #         last_last_estimate = last_estimate
+    #         last_estimate = block_jump_estimate
+
+    #         # get block header or new estimate
+    #         price_day_block_estimate = price_day_block_estimate - block_jump_estimate
+
+    #         # check time of new block and get new block jump estimate
+    #         time_in_seconds, hash_end = get_block_time(price_day_block_estimate)
+    #         seconds_difference = time_in_seconds - price_day_seconds
+    #         block_jump_estimate = round(
+    #             144 * float(seconds_difference) / float(seconds_in_a_day)
+    #         )
+
+    #     print("60%..", end="", flush=True)
+    #     # the oscillation may be over multiple blocks so we add/subtract single blocks
+    #     # to ensure we have exactly the first block of the target day
+    #     if time_in_seconds > price_day_seconds:
+    #         # if the estimate was after price day look at earlier blocks
+    #         while time_in_seconds > price_day_seconds:
+    #             # decrement the block by one, read new block header, check time
+    #             price_day_block_estimate = price_day_block_estimate - 1
+    #             time_in_seconds, hash_end = get_block_time(price_day_block_estimate)
+
+    #         # the guess is now perfectly the first block before midnight
+    #         price_day_block_estimate = price_day_block_estimate + 1
+
+    #     # if the estimate was before price day look for later blocks
+    #     elif time_in_seconds < price_day_seconds:
+    #         while time_in_seconds < price_day_seconds:
+    #             # increment the block by one, read new block header, check time
+    #             price_day_block_estimate = price_day_block_estimate + 1
+    #             time_in_seconds, hash_end = get_block_time(price_day_block_estimate)
+
+    #     print("80%..", end="", flush=True)
+    #     # assign the estimate as the price day block since it is correct now
+    #     price_day_block = price_day_block_estimate
+
+    #     # get the day of the month
+    #     time_in_seconds, hash_start = get_block_time(price_day_block)
+    #     day1 = get_day_of_month(time_in_seconds)
+
+    #     # get the last block number of the day
+    #     price_day_block_end = price_day_block
+    #     time_in_seconds, hash_end = get_block_time(price_day_block_end)
+    #     day2 = get_day_of_month(time_in_seconds)
+
+    #     print("100%\t\t\t25% done", flush=True)
+    #     print("\nDetermining the correct order of blocks", flush=True)
+
+    #     # load block nums and hashes needed
+    #     block_num = 0
+    #     print_next = 0
+    #     while day1 == day2:
+    #         # print progress update
+    #         block_num += 1
+    #         if block_num / 144 * 100 > print_next:
+    #             print(str(print_next) + "%..", end="", flush=True)
+    #             print_next += 20
+
+    #         # append needed block
+    #         block_nums_needed.append(price_day_block_end)
+    #         block_hashes_needed.append(hash_end)
+    #         block_times_needed.append(time_in_seconds)
+    #         price_day_block_end += 1  # assume 30+ blocks this day
+    #         time_in_seconds, hash_end = get_block_time(price_day_block_end)
+    #         day2 = get_day_of_month(time_in_seconds)
+
+    #     # complete print update status
+    #     while print_next < 100:
+    #         print(str(print_next) + "%..", end="", flush=True)
+    #         print_next += 20
+
+    #     # set start and end block numbers
+    #     block_start_num = price_day_block
+    #     block_finish_num = price_day_block_end
+
+    #     print("100%\t\t\t50% done", flush=True)
+
+    return target_block_start, target_block_end
+
+
+def remaining_parts():
     ##############################################################################
 
     # Part 6) Build a map of the binary block files
@@ -1354,7 +1375,7 @@ def remaining_parts():
         bottom_note2 = "may have node dependent differences data on the chain tip"
 
     # Write the HTML code for the chart
-    html_content = f'''<!DOCTYPE html>
+    html_content = f"""<!DOCTYPE html>
 
     <html>
     <head>
@@ -1674,7 +1695,7 @@ def remaining_parts():
 
     </body>
     </html>
-    '''
+    """
 
     # name the file with dates or blocks
     filename = ".html"
@@ -1694,9 +1715,15 @@ def remaining_parts():
 
 
 if __name__ == "__main__":
-    print("Dude!")
+    print("-" * 80)
+    print("Let's go!")
+    print("-" * 80)
+
     run_mode, user_date = part_1a_process_args()
     data_dir, blocks_dir, bitcoin_cli_options = part_1b_initializing()
-    print(data_dir, blocks_dir, bitcoin_cli_options)
-    part_2_ask_node(bitcoin_cli_options, "getblockchaininfo")
-    print(part_3_get_consensus_block_timestamp())
+    rpc_output = part_2_ask_node(bitcoin_cli_options, "getblockchaininfo")
+    consensus_block_timestamp = part_3_get_consensus_block_timestamp()
+    target_date = part_4_set_target_date("date", [])
+    target_block_start, target_block_end = part_5_get_target_blocks(
+        "date", "2025-05-25"
+    )
