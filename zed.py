@@ -6,7 +6,8 @@ import platform
 import subprocess
 import sys
 import warnings
-from typing import List, Tuple
+from hashlib import sha256
+from typing import Dict, List, Tuple
 
 
 def part_1a_process_args() -> Tuple[str, str]:
@@ -204,18 +205,18 @@ def part_3_get_consensus_block_timestamp() -> datetime:
     return consensus_block_timestamp
 
 
-def part_4_set_target_date(date_mode, date_entered) -> datetime:
+def part_4_set_target_date(run_mode, target_date) -> datetime:
     print("Starting Part 4...")
-    print(f"  Date entered: {date_entered}")
-    print(f"  Date mode: {date_mode}")
-    if date_mode == "date":
+    print(f"  Run mode: {run_mode}")
+    print(f"  Date entered: {target_date}")
+    if run_mode == "date":
         print("  Date mode is enabled...set target date to most recent price date")
     else:
         print(
             "  Date mode is disabled...check the entered date is sufficiently in the past."
         )
         print(
-            "                       ...check the entered date is sufficiently recent."
+            "  Date mode is disabled...check the entered date is sufficiently recent."
         )
     print("  Returning:")
     target_date = datetime.datetime(2025, 5, 22, tzinfo=datetime.UTC)
@@ -278,18 +279,23 @@ def get_block_time(height):
     return (block_header["time"], block_hash_b[:64].decode())
 
 
-def part_5_get_target_blocks(run_mode: str, target_day: datetime) -> Tuple[int, int]:
+def part_5_get_target_block_heights(
+    run_mode: str, target_date: datetime
+) -> Tuple[int, int, List[str]]:
     print("Starting Part 5...")
     print(f"  Run mode: {run_mode}")
-    print(f"  Target day: {target_day}")
+    print(f"  Target date: {target_date}")
     if run_mode == "date":
         print("  Date mode is enabled...get all block on target date")
     else:
         print("  Block mode is enabled...get the last 144 blocks")
-    print("  Returning start and end block numbers for target...")
+    print(
+        "  Returning start and end target block numbers, as well as their block hashes..."
+    )
 
     target_block_start = 88027
     target_block_end = 88171
+    target_block_hashes_needed = []
 
     # # if block mode add the blocks and hashes to a list
     # if block_mode:
@@ -427,161 +433,148 @@ def part_5_get_target_blocks(run_mode: str, target_day: datetime) -> Tuple[int, 
 
     #     print("100%\t\t\t50% done", flush=True)
 
-    return target_block_start, target_block_end
+    return target_block_start, target_block_end, target_block_hashes_needed
+
+
+def sha256d(b: bytes) -> bytes:
+    return sha256(sha256(b).digest()).digest()
+
+
+def part_6_create_target_block_binaries_index(block_hashes_needed: List[str]) -> Dict:
+    print("Starting Part 6...")
+    print(
+        "  For each target date block identified by its block hash, extract data from its binary file:"
+    )
+    print("    1. binary file name that contains the target block")
+    print("    2. byte offset of the target block in the binary file")
+    print("    3. size of the target block in bytes")
+    print("    4. timestamp of the target block")
+    print("  Returning a dictionary of the above data for each target block hash...")
+
+    found_blocks = {}  # what we will return (data from the binaries)
+
+    # ##############################################################################
+    # # Part 6) Build a map of the binary block files
+    # ##############################################################################
+
+    # # In this section we find the byte-wise location of all the block data
+    # # that we need in terms of where it's stored on the user's hard drive
+    # print(" Mapping block locations in raw block files", flush=True)
+
+    # # standard variables for block readind and estiamted blocks per binary .blk file
+    # blocks_per_file = 50  # generous, likely much more
+    # Mainnet_flag = b"\xf9\xbe\xb4\xd9"
+    # Header_size = 80
+
+    # # Get all .blk files sorted by index
+    # block_hashes_needed = set(block_hashes_needed)
+    # found_blocks = {}
+    # blk_files = sorted(
+    #     [
+    #         f
+    #         for f in os.listdir(blocks_dir)
+    #         if f.startswith("blk") and f.endswith(".dat")
+    #     ],
+    #     key=lambda f: int(f[3:8]),
+    # )
+
+    # # conservatively estimate the first and last blk file needed
+    # block_depth_start = block_count_consensus - block_nums_needed[0]
+    # last_blk_file_num = int(blk_files[-1][3:8])
+    # start_blk_index = (
+    #     last_blk_file_num - int(block_depth_start / blocks_per_file + 1) - 1
+    # )
+    # end_blk_index_est = last_blk_file_num - int(int(block_depth_start / 128))
+
+    # # read a swath of block files looking for the block hashes needeed
+    # blk_files = [f for f in blk_files if int(f[3:8]) >= start_blk_index]
+    # print_next = 0
+    # block_file_num = 0
+    # for blk_file in blk_files:
+    #     # path to the next blk file
+    #     path = os.path.join(blocks_dir, blk_file)
+
+    #     # print progress update
+    #     block_file_num += 1
+    #     if block_file_num / (end_blk_index_est - start_blk_index) * 100 > print_next:
+    #         if print_next < 100:
+    #             print(str(print_next) + "%..", end="", flush=True)
+    #             print_next += 20
+
+    #     # read the blk file
+    #     with open(path, "rb") as f:
+    #         while True:
+    #             # read the headers to the block
+    #             start = f.tell()
+    #             magic = f.read(4)
+    #             if not magic or len(magic) < 4:
+    #                 break
+    #             if magic != Mainnet_flag:
+    #                 f.seek(start + 1)
+    #                 continue
+    #             size_bytes = f.read(4)
+    #             if len(size_bytes) < 4:
+    #                 break
+    #             block_size = int.from_bytes(size_bytes, "little")
+    #             header = f.read(Header_size)
+    #             if len(header) < Header_size:
+    #                 break
+
+    #             # read the block hash and time stamp
+    #             block_hash = sha256d(header)[::-1]  # big-endian
+    #             block_hash_hex = block_hash.hex()
+    #             timestamp = int.from_bytes(header[68:72], "little")
+
+    #             # add block to the list if a needed block
+    #             if block_hash_hex in block_hashes_needed:
+    #                 found_blocks[block_hash] = {
+    #                     "file": blk_file,
+    #                     "offset": start,
+    #                     "block_size": block_size,
+    #                     "time": timestamp,
+    #                 }
+    #                 if len(found_blocks) == len(block_hashes_needed):
+    #                     break
+
+    #             # find the next block in the blk file
+    #             f.seek(start + 8 + block_size)
+
+    #     # stop if all blocks found
+    #     if len(found_blocks) == len(block_hashes_needed):
+    #         break
+
+    # # error if all blocks found, if good print progress update
+    # if len(found_blocks) != len(block_hashes_needed):
+    #     print("Error: Reached end of blk files without finding all target blocks.")
+    #     sys.exit()
+    # else:
+    #     while print_next < 100:
+    #         print(str(print_next) + "%..", end="", flush=True)
+    #         print_next += 20
+    #     print("100% \t\t\t75% done", flush=True)
+
+    return found_blocks
+
+
+def part_7_build_bins() -> List[float]:
+    print("Starting Part 7...")
+    print("  Building the logarithmic bins for the utxo amounts distribution...")
+    print("  In the exponent range of -6 to 6, with 200 bins per 10x range")
+    print("  Returning an indexed list of bins...")
+
+    # Make the first bin 0
+    bins = [0.0]
+
+    # Create 200 bins in each 10x range from 1e-6 thru 1e5
+    for exponent in range(-6, 6):
+        for b in range(0, 200):
+            bin_value = 10 ** (exponent + b / 200)
+            bins.append(bin_value)
+
+    return bins
 
 
 def remaining_parts():
-    ##############################################################################
-
-    # Part 6) Build a map of the binary block files
-
-    ##############################################################################
-
-    # In this section we find the byte-wise location of all the block data
-    # that we need in terms of where it's stored on the user's hard drive
-
-    print("\nMaping block locations in raw block files", flush=True)
-
-    # standard variables for block readind and estiamted blocks per binary .blk file
-    blocks_per_file = 50  # generous, likely much more
-    Mainnet_flag = b"\xf9\xbe\xb4\xd9"
-    Header_size = 80
-
-    # short cut for hashing
-    from hashlib import sha256
-
-    def sha256d(b):
-        return sha256(sha256(b).digest()).digest()
-
-    # Get all .blk files sorted by index
-    block_hashes_needed = set(block_hashes_needed)
-    found_blocks = {}
-    blk_files = sorted(
-        [
-            f
-            for f in os.listdir(blocks_dir)
-            if f.startswith("blk") and f.endswith(".dat")
-        ],
-        key=lambda f: int(f[3:8]),
-    )
-
-    # conservatively estimate the first and last blk file needed
-    block_depth_start = block_count_consensus - block_nums_needed[0]
-    last_blk_file_num = int(blk_files[-1][3:8])
-    start_blk_index = (
-        last_blk_file_num - int(block_depth_start / blocks_per_file + 1) - 1
-    )
-    end_blk_index_est = last_blk_file_num - int(int(block_depth_start / 128))
-
-    # read a swath of block files looking for the block hashes needeed
-    blk_files = [f for f in blk_files if int(f[3:8]) >= start_blk_index]
-    print_next = 0
-    block_file_num = 0
-    for blk_file in blk_files:
-        # path to the next blk file
-        path = os.path.join(blocks_dir, blk_file)
-
-        # print progress update
-        block_file_num += 1
-        if block_file_num / (end_blk_index_est - start_blk_index) * 100 > print_next:
-            if print_next < 100:
-                print(str(print_next) + "%..", end="", flush=True)
-                print_next += 20
-
-        # read the blk file
-        with open(path, "rb") as f:
-            while True:
-                # read the headers to the block
-                start = f.tell()
-                magic = f.read(4)
-                if not magic or len(magic) < 4:
-                    break
-                if magic != Mainnet_flag:
-                    f.seek(start + 1)
-                    continue
-                size_bytes = f.read(4)
-                if len(size_bytes) < 4:
-                    break
-                block_size = int.from_bytes(size_bytes, "little")
-                header = f.read(Header_size)
-                if len(header) < Header_size:
-                    break
-
-                # read the block hash and time stamp
-                block_hash = sha256d(header)[::-1]  # big-endian
-                block_hash_hex = block_hash.hex()
-                timestamp = int.from_bytes(header[68:72], "little")
-
-                # add block to the list if a needed block
-                if block_hash_hex in block_hashes_needed:
-                    found_blocks[block_hash] = {
-                        "file": blk_file,
-                        "offset": start,
-                        "block_size": block_size,
-                        "time": timestamp,
-                    }
-                    if len(found_blocks) == len(block_hashes_needed):
-                        break
-
-                # find the next block in the blk file
-                f.seek(start + 8 + block_size)
-
-        # stop if all blocks found
-        if len(found_blocks) == len(block_hashes_needed):
-            break
-
-    # error if all blocks found, if good print progress update
-    if len(found_blocks) != len(block_hashes_needed):
-        print("Error: Reached end of blk files without finding all target blocks.")
-        sys.exit()
-    else:
-        while print_next < 100:
-            print(str(print_next) + "%..", end="", flush=True)
-            print_next += 20
-        print("100% \t\t\t75% done", flush=True)
-
-    ##############################################################################
-
-    #  Part 7) Build the container to hold the output amounts bell curve
-
-    ##############################################################################
-
-    # We're almost ready to read in block data but first we must construct the
-    # containers which will hold the distribution of transaction output amounts.
-    # In pure math a bell curve can be perfectly smooth. But to make a bell curve
-    # from a sample of data, one must specify a series of buckets, or bins, and then
-    # count how many samples are in each bin. If the bin size is too large, say just one
-    # large bin, a bell curve can't appear because it will have only one bar. The bell
-    # curve also doesn't appear if the bin size is too small because then there will
-    # only be one sample in each bin and we'd fail to have a distribution of bin heights.
-    # Although several bin sizes would work, I have found over many years, that 200 bins
-    # for every 10x of bitcoin amounts works very well. We use 'every 10x' because just
-    # like a long term bitcoin price chart, viewing output amounts in log scale provides
-    # a more comprehensive and detailed overview of the amounts being analyzed.
-
-    # Define the maximum and minimum values (in log10) of btc amounts to use
-    first_bin_value = -6
-    last_bin_value = 6  # python -1 means last in list
-    range_bin_values = last_bin_value - first_bin_value
-
-    # create a list of output_bell_curve_bins and add zero sats as the first bin
-    output_bell_curve_bins = [
-        0.0
-    ]  # a decimal tells python the list will contain decimals
-
-    # calculate btc amounts of 200 samples in every 10x from 100 sats (1e-6 btc) to 100k (1e5) btc
-    for exponent in range(-6, 6):  # python range uses 'less than' for the big number
-        # add 200 bin_width increments in this 10x to the list
-        for b in range(0, 200):
-            bin_value = 10 ** (exponent + b / 200)
-            output_bell_curve_bins.append(bin_value)
-
-    # Create a list the same size as the bell curve to keep the count of the bins
-    number_of_bins = len(output_bell_curve_bins)
-    output_bell_curve_bin_counts = []
-    for n in range(0, number_of_bins):
-        output_bell_curve_bin_counts.append(float(0.0))
-
     ##############################################################################
 
     #  Part 8) Get all output amounts from all block on target day
@@ -1724,6 +1717,11 @@ if __name__ == "__main__":
     rpc_output = part_2_ask_node(bitcoin_cli_options, "getblockchaininfo")
     consensus_block_timestamp = part_3_get_consensus_block_timestamp()
     target_date = part_4_set_target_date("date", [])
-    target_block_start, target_block_end = part_5_get_target_blocks(
-        "date", "2025-05-25"
+    target_block_start, target_block_end, target_block_hashes_needed = (
+        part_5_get_target_block_heights(
+            "date",
+            "2025-05-25",
+        )
     )
+    found_blocks = part_6_create_target_block_binaries_index(target_block_hashes_needed)
+    bins = part_7_build_bins()
